@@ -1,0 +1,193 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Project-specific binaries
+kino
+imdb
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# Go module files (usually tracked, but can be ignored in some cases)
+# go.sum
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+*.sublime-project
+*.sublime-workspace
+*.vim
+*.emacs.d
+
+# Go build cache
+*.exe
+*.test
+*.prof
+*.cpu.prof
+*.mem.prof
+*.mutex.prof
+*.block.prof
+
+# GoLand/IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Temporary files
+*.tmp
+*.log
+*.temp
+
+# Content directory for debugging
+content/
+
+# Test files created during debugging
+test_*.go
+
+# Downloaded media or cache
+*.mp4
+*.mkv
+*.avi
+*.srt
+*.vtt
+cache/
+downloads/
+media/
+
+# Configuration files with sensitive data
+.env
+.env.local
+.env.*.local
+config.json
+secrets.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# macOS
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Archives
+*.zip
+*.tar.gz
+*.tar.bz2
+*.rar
+*.7z
+
+# Logs
+*.log
+logs/
+log/
+
+# Backup files
+*.bak
+*.backup
+*.old
+*~
+*.orig
+
+# Performance and profiling
+*.prof
+*.cpu.prof
+*.mem.prof
+*.mutex.prof
+*.block.prof
+*.trace
+
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+
+# Go test artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+coverage.out
+
+# Go modules (if needed, though usually tracked)
+# go.sum
+
+# Dependency directories
+vendor/
+node_modules/
+
+# Temporary directories
+tmp/
+temp/
+.tmp/
