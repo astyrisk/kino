@@ -25,13 +25,12 @@ func main() {
 		Transport: &customTransport{http.DefaultTransport},
 	}
 
-	// If no command-line arguments, run in interactive mode
 	if flag.NArg() == 0 {
 		interactiveSearch(client)
 		return
 	}
 
-	// Original non-interactive mode for backward compatibility
+	// non-interactive mode 
 	title, err := imdb.SearchTitle(client, flag.Arg(0))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -52,37 +51,93 @@ func main() {
 		}
 		fmt.Printf("%d. %s%s - ID: %s\n", i+1, title[i].Name, year, title[i].ID)
 	}
-	
-	// Get and display details for the first result
-	t, err := imdb.NewTitle(client, title[0].ID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(2)
-	}
-
-	fmt.Println("\nDetails for first result:")
-	fmt.Println("------------------------")
-	fmt.Println(t.String())
 }
 
-// interactiveSearch runs the interactive fuzzy finder mode
 func interactiveSearch(client *http.Client) {
-	// Set up signal handler for graceful exit
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	
-	fmt.Println("Interactive IMDb Search")
-	fmt.Println("======================")
-	fmt.Println("Enter a film or TV show title (Ctrl+C to exit)")
-	fmt.Println()
 
 	for {
-		// Get search query from user
-		fmt.Print("Search: ")
-		var query string
-		_, err := fmt.Scanln(&query)
-		if err != nil {
-			// Handle Ctrl+C or EOF
+		fmt.Print("Search kino: ")
+		
+		// Use a goroutine to read input non-blockingly
+		inputChan := make(chan string)
+		errChan := make(chan error)
+		
+		go func() {
+			var query string
+			_, err := fmt.Scanln(&query)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			inputChan <- query
+		}()
+
+		// Wait for either input, signal, or error
+		select {
+		case sig := <-sigChan:
+			fmt.Println("Goodbye!")
+			return
+		case query := <-inputChan:
+			query = strings.TrimSpace(query)
+			if query == "" {
+				continue
+			}
+
+			results, err := imdb.SearchTitle(client, query)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error searching: %v\n", err)
+				continue
+			}
+
+			if len(results) == 0 {
+				fmt.Println("No results found.")
+				fmt.Println()
+				continue
+			}
+
+			// Select a title using fuzzy finder
+			selectedTitle, err := selectTitle(results)
+			if err != nil {
+				if err.Error() == "abort" {
+					fmt.Println("Search cancelled.")
+					fmt.Println()
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				continue
+			}
+
+			// Check if it's a TV show and handle nested selection
+			finalID, err := handleTitleSelection(client, selectedTitle)
+			if err != nil {
+				if err.Error() == "abort" {
+					fmt.Println("Selection cancelled.")
+					fmt.Println()
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				continue
+			}
+
+			fmt.Printf("\nSelected IMDb ID: %s\n\n", finalID)
+			
+			// Handle streaming selection
+			err = handleStreamingSelection(finalID)
+			if err != nil {
+				if err.Error() == "abort" {
+					fmt.Println("Streaming cancelled.")
+					fmt.Println()
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				continue
+			}
+			
+			fmt.Println("Playback finished. Starting new search...")
+			fmt.Println()
+		case err := <-errChan:
 			if err.Error() == "interrupt" || err.Error() == "EOF" {
 				fmt.Println("\nGoodbye!")
 				return
@@ -90,69 +145,9 @@ func interactiveSearch(client *http.Client) {
 			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
 			continue
 		}
-
-		query = strings.TrimSpace(query)
-		if query == "" {
-			continue
-		}
-
-		// Search for titles
-		results, err := imdb.SearchTitle(client, query)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error searching: %v\n", err)
-			continue
-		}
-
-		if len(results) == 0 {
-			fmt.Println("No results found. Try a different search.")
-			fmt.Println()
-			continue
-		}
-
-		// Select a title using fuzzy finder
-		selectedTitle, err := selectTitle(results)
-		if err != nil {
-			if err.Error() == "abort" {
-				fmt.Println("Search cancelled.")
-				fmt.Println()
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			continue
-		}
-
-		// Check if it's a TV show and handle nested selection
-		finalID, err := handleTitleSelection(client, selectedTitle)
-		if err != nil {
-			if err.Error() == "abort" {
-				fmt.Println("Selection cancelled.")
-				fmt.Println()
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			continue
-		}
-
-		fmt.Printf("\nSelected IMDb ID: %s\n\n", finalID)
-		
-		// Handle streaming selection
-		err = handleStreamingSelection(finalID)
-		if err != nil {
-			if err.Error() == "abort" {
-				fmt.Println("Streaming cancelled.")
-				fmt.Println()
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			continue
-		}
-		
-		fmt.Println("Playback finished. Starting new search...")
-		fmt.Println()
 	}
 }
 
-// selectTitle shows a fuzzy finder for title selection
 func selectTitle(titles []imdb.Title) (*imdb.Title, error) {
 	idx, err := fuzzyfinder.Find(
 		titles,
@@ -162,9 +157,8 @@ func selectTitle(titles []imdb.Title) (*imdb.Title, error) {
 			if title.Year > 0 {
 				year = fmt.Sprintf(" (%d)", title.Year)
 			}
-			// Determine if it's TV or Film
 			mediaType := "Film"
-			if strings.Contains(strings.ToLower(title.Type), "tv") {
+			if isTVShow(title) {
 				mediaType = "TV"
 			}
 			return fmt.Sprintf("%s%s [%s]", title.Name, year, mediaType)
@@ -179,35 +173,27 @@ func selectTitle(titles []imdb.Title) (*imdb.Title, error) {
 	return &titles[idx], nil
 }
 
-// handleTitleSelection handles the selection process for a title
 func handleTitleSelection(client *http.Client, title *imdb.Title) (string, error) {
-	// Get detailed title information to check if it's a TV show
 	fullTitle, err := imdb.NewTitle(client, title.ID)
 	if err != nil {
 		return "", fmt.Errorf("error getting title details: %v", err)
 	}
 
-	// Check if it's a TV show (has seasons and episodes)
 	if isTVShow(fullTitle) {
 		return handleTVShowSelection(client, fullTitle)
 	}
 
-	// For movies, return the title ID directly
 	return title.ID, nil
 }
 
-// isTVShow checks if a title is a TV series with seasons
 func isTVShow(title *imdb.Title) bool {
-	// Check if it's a TV series based on Type field or SeasonCount
 	return strings.Contains(strings.ToLower(title.Type), "tv") ||
 	       title.SeasonCount > 0
 }
 
-// handleTVShowSelection handles nested selection for TV shows
 func handleTVShowSelection(client *http.Client, title *imdb.Title) (string, error) {
 	fmt.Println("\nTV Series detected!")
 	
-	// Get seasons
 	seasons, err := getSeasons(client, title.ID)
 	if err != nil {
 		return "", fmt.Errorf("error getting seasons: %v", err)
@@ -218,13 +204,11 @@ func handleTVShowSelection(client *http.Client, title *imdb.Title) (string, erro
 		return title.ID, nil
 	}
 
-	// Select season
 	selectedSeason, err := selectSeason(seasons)
 	if err != nil {
 		return "", err
 	}
 
-	// Get episodes for selected season
 	episodes, err := getEpisodes(client, title.ID, selectedSeason)
 	if err != nil {
 		return "", fmt.Errorf("error getting episodes: %v", err)
@@ -235,13 +219,11 @@ func handleTVShowSelection(client *http.Client, title *imdb.Title) (string, erro
 		return fmt.Sprintf("%s/season/%d", title.ID, selectedSeason), nil
 	}
 
-	// Select episode
 	selectedEpisode, err := selectEpisode(episodes)
 	if err != nil {
 		return "", err
 	}
 
-	// Return the full IMDb ID with season and episode
 	return fmt.Sprintf("%s/episode/%d/%d", title.ID, selectedSeason, selectedEpisode), nil
 }
 
@@ -267,7 +249,6 @@ func getEpisodes(client *http.Client, titleID string, season int) ([]int, error)
 	return episodes, nil
 }
 
-// selectSeason shows a fuzzy finder for season selection
 func selectSeason(seasons []int) (int, error) {
 	idx, err := fuzzyfinder.Find(
 		seasons,
@@ -284,7 +265,6 @@ func selectSeason(seasons []int) (int, error) {
 	return seasons[idx], nil
 }
 
-// selectEpisode shows a fuzzy finder for episode selection
 func selectEpisode(episodes []int) (int, error) {
 	idx, err := fuzzyfinder.Find(
 		episodes,
@@ -301,9 +281,7 @@ func selectEpisode(episodes []int) (int, error) {
 	return episodes[idx], nil
 }
 
-// handleStreamingSelection handles the streaming workflow
 func handleStreamingSelection(imdbID string) error {
-	// Check if mpv is available
 	if !player.IsAvailable() {
 		fmt.Println("\nWarning: mpv not found in PATH")
 		fmt.Println("Please install mpv to enable streaming playback")
@@ -313,10 +291,8 @@ func handleStreamingSelection(imdbID string) error {
 		return nil
 	}
 	
-	// Parse IMDb ID to determine media type and extract season/episode
 	mediaType, season, episode := parseIMDbID(imdbID)
 	
-	// Fetch streaming variants
 	fmt.Println("\nFetching streaming options...")
 	variants, err := stream.GetStreamVariants(imdbID, mediaType, season, episode)
 	if err != nil {
@@ -327,13 +303,11 @@ func handleStreamingSelection(imdbID string) error {
 		return fmt.Errorf("no streaming variants found")
 	}
 	
-	// Select a variant using fuzzy finder
 	selectedVariant, err := selectStreamVariant(variants)
 	if err != nil {
 		return err
 	}
 	
-	// Play the selected variant
 	fmt.Printf("\nPlaying %s...\n", stream.FormatVariantDisplay(*selectedVariant))
 	err = player.PlayURL(selectedVariant.URL)
 	if err != nil {
@@ -343,7 +317,6 @@ func handleStreamingSelection(imdbID string) error {
 	return nil
 }
 
-// parseIMDbID parses an IMDb ID to extract media type, season, and episode
 func parseIMDbID(imdbID string) (stream.MediaType, int, int) {
 	// Check if it's a TV episode (format: tt1234567/episode/1/2)
 	if strings.Contains(imdbID, "/episode/") {
@@ -367,11 +340,9 @@ func parseIMDbID(imdbID string) (stream.MediaType, int, int) {
 		}
 	}
 	
-	// Default to movie
 	return stream.Movie, 0, 0
 }
 
-// selectStreamVariant shows a fuzzy finder for stream variant selection
 func selectStreamVariant(variants []stream.StreamVariant) (*stream.StreamVariant, error) {
 	idx, err := fuzzyfinder.Find(
 		variants,
