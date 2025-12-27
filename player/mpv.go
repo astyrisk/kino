@@ -2,18 +2,16 @@ package player
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
-	"strings"
 )
 
-// Player handles video playback
 type Player struct {
 	playerPath string
+	CacheSize  string
+	Title      string
 }
 
-// New creates a new Player instance
 func New() (*Player, error) {
 	playerPath, err := exec.LookPath("mpv")
 	if err != nil {
@@ -25,30 +23,33 @@ func New() (*Player, error) {
 	}, nil
 }
 
-// Play starts playing the given URL with mpv
 func (p *Player) Play(url string) error {
-	log.Printf("Playing stream with mpv: %s", url)
+	args := []string{}
 	
-	cmd := exec.Command(p.playerPath, url)
+	if p.CacheSize != "" {
+		args = append(args, fmt.Sprintf("--demuxer-max-bytes=%s", p.CacheSize))
+	}
+	
+	if p.Title != "" {
+		args = append(args, fmt.Sprintf("--title=%s", p.Title))
+		args = append(args, fmt.Sprintf("--force-media-title=%s", p.Title))
+	}
+	
+	args = append(args, url)
+	
+	cmd := exec.Command(p.playerPath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to play stream: %w", err)
-	}
-	
-	return nil
+	return cmd.Run()
 }
 
-// IsAvailable checks if mpv is available on the system
 func IsAvailable() bool {
 	_, err := exec.LookPath("mpv")
 	return err == nil
 }
 
-// PlayURL plays a streaming URL with mpv (convenience function)
 func PlayURL(url string) error {
 	player, err := New()
 	if err != nil {
@@ -56,17 +57,4 @@ func PlayURL(url string) error {
 	}
 	
 	return player.Play(url)
-}
-
-// FormatStreamURL ensures the URL is properly formatted for mpv
-func FormatStreamURL(url string) string {
-	// Trim any whitespace
-	url = strings.TrimSpace(url)
-	
-	// Ensure it's a valid URL
-	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		return url
-	}
-	
-	return url
 }

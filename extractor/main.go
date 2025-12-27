@@ -52,7 +52,21 @@ func logDebug(format string, v ...interface{}) {
 }
 
 var client = &http.Client{
-	Timeout: defaultHTTPTimeout,
+	Timeout:   defaultHTTPTimeout,
+	Transport: &customTransport{http.DefaultTransport},
+}
+
+const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
+
+type customTransport struct {
+	http.RoundTripper
+}
+
+func (e *customTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	defer time.Sleep(time.Second)         // don't go too fast or risk being blocked by awswaf
+	r.Header.Set("Accept-Language", "en") // avoid IP-based language detection
+	r.Header.Set("User-Agent", userAgent)
+	return e.RoundTripper.RoundTrip(r)
 }
 
 var fileCounter int
