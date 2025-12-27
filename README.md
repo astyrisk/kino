@@ -4,7 +4,7 @@
 
 A simple CLI tool to search and stream movies and TV shows using mpv player.
 
-![Demo](media/example.gif)
+![Demo](assets/example.gif)
 
 ## Dependencies
 
