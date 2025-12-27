@@ -40,7 +40,7 @@ or
 - [x] Video title display
 
 ### Todo
-- [ ] Refactor [`main.go`](main.go:1)
+- [x] Refactor [`main.go`](main.go:1)
 - [ ] Fix extractor decoder issue
 - [ ] Add download functionality
 - [ ] Add subtitle support

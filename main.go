@@ -1,4 +1,3 @@
-// KINO: Film in terminal
 package main
 
 import (
@@ -20,7 +19,7 @@ import (
 	"imdb/stream"
 )
 
-var cacheSize = flag.String("cache", "30MiB", "Cache size limit for mpv (e.g., 30MiB, 50MiB)")
+var cacheSize = flag.String("cache", "12MiB", "Cache size limit for mpv (e.g., 30MiB, 50MiB)")
 
 func main() {
 	flag.Parse()
@@ -34,10 +33,8 @@ func main() {
 		return
 	}
 
-	// non-interactive mode - pass argument to interactive flow
 	query := flag.Arg(0)
 	
-	// Search for titles
 	results, err := imdb.SearchTitle(client, query)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -48,14 +45,12 @@ func main() {
 		os.Exit(3)
 	}
 
-	// Select a title using fuzzy finder
 	selectedTitle, err := selectTitle(results)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(4)
 	}
 
-	// Check if it's a TV show and handle nested selection
 	finalID, err := handleTitleSelection(client, selectedTitle)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -64,7 +59,6 @@ func main() {
 
 	fmt.Printf("\nSelected IMDb ID: %s\n\n", finalID)
 	
-	// Handle streaming selection
 	err = handleStreamingSelection(finalID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -81,7 +75,6 @@ func interactiveSearch(client *http.Client) {
 	for {
 		fmt.Print("Search kino: ")
 		
-		// Read input with bufio to handle multi-word queries
 		input, err := reader.ReadString('\n')
 		if err != nil {
 			if err.Error() == "EOF" {
@@ -109,7 +102,6 @@ func interactiveSearch(client *http.Client) {
 			continue
 		}
 
-		// Select a title using fuzzy finder
 		selectedTitle, err := selectTitle(results)
 		if err != nil {
 			if err.Error() == "abort" {
@@ -121,7 +113,6 @@ func interactiveSearch(client *http.Client) {
 			continue
 		}
 
-		// Check if it's a TV show and handle nested selection
 		finalID, err := handleTitleSelection(client, selectedTitle)
 		if err != nil {
 			if err.Error() == "abort" {
@@ -135,7 +126,6 @@ func interactiveSearch(client *http.Client) {
 
 		fmt.Printf("\nSelected IMDb ID: %s\n\n", finalID)
 		
-		// Handle streaming selection
 		err = handleStreamingSelection(finalID)
 		if err != nil {
 			if err.Error() == "abort" {
@@ -212,7 +202,6 @@ func handleTVShowSelection(client *http.Client, title *imdb.Title) (string, erro
 		selectedSeason, err := selectSeason(seasons)
 		if err != nil {
 			if err.Error() == "abort" {
-				// User selected "Go Back" from season selection, return to title selection
 				return "", fmt.Errorf("abort")
 			}
 			return "", err
@@ -232,7 +221,6 @@ func handleTVShowSelection(client *http.Client, title *imdb.Title) (string, erro
 			selectedEpisode, err := selectEpisode(episodes)
 			if err != nil {
 				if err.Error() == "abort" {
-					// User selected "Go Back" from episode selection, return to season selection
 					break
 				}
 				return "", err
@@ -243,9 +231,7 @@ func handleTVShowSelection(client *http.Client, title *imdb.Title) (string, erro
 	}
 }
 
-// getSeasons retrieves available seasons for a TV show
 func getSeasons(client *http.Client, title *imdb.Title) ([]int, error) {
-	// Use the SeasonCount field from the Title struct
 	if title.SeasonCount <= 0 {
 		return []int{}, nil
 	}
@@ -258,9 +244,7 @@ func getSeasons(client *http.Client, title *imdb.Title) ([]int, error) {
 	return seasons, nil
 }
 
-// getEpisodes retrieves episodes for a specific season
 func getEpisodes(client *http.Client, titleID string, season int) ([]int, error) {
-	// Use the imdb.NewSeason function to get season details
 	seasonInfo, err := imdb.NewSeason(client, titleID, season)
 	if err != nil {
 		return nil, fmt.Errorf("error getting season %d: %v", season, err)
@@ -279,7 +263,6 @@ func getEpisodes(client *http.Client, titleID string, season int) ([]int, error)
 }
 
 func selectSeason(seasons []int) (int, error) {
-	// Create a slice with seasons and a "Go Back" option
 	items := make([]string, len(seasons)+1)
 	for i, season := range seasons {
 		items[i] = fmt.Sprintf("Season %d", season)
@@ -298,7 +281,6 @@ func selectSeason(seasons []int) (int, error) {
 		return 0, err
 	}
 
-	// Check if "Go Back" was selected
 	if idx == len(items)-1 {
 		return 0, fmt.Errorf("abort")
 	}
@@ -307,7 +289,6 @@ func selectSeason(seasons []int) (int, error) {
 }
 
 func selectEpisode(episodes []int) (int, error) {
-	// Create a slice with episodes and a "Go Back" option
 	items := make([]string, len(episodes)+1)
 	for i, episode := range episodes {
 		items[i] = fmt.Sprintf("Episode %d", episode)
@@ -326,7 +307,6 @@ func selectEpisode(episodes []int) (int, error) {
 		return 0, err
 	}
 
-	// Check if "Go Back" was selected
 	if idx == len(items)-1 {
 		return 0, fmt.Errorf("abort")
 	}
@@ -363,10 +343,8 @@ func handleStreamingSelection(imdbID string) error {
 	
 	fmt.Printf("\nPlaying %s...\n", stream.FormatVariantDisplay(*selectedVariant))
 	
-	// Get title information for the player window
 	title := getTitleForPlayer(imdbID, mediaType, season, episode)
 	
-	// Create player with cache size and title
 	player, err := player.New()
 	if err != nil {
 		return fmt.Errorf("failed to create player: %w", err)
@@ -375,7 +353,6 @@ func handleStreamingSelection(imdbID string) error {
 	player.CacheSize = *cacheSize
 	player.Title = title
 	
-	// Play the stream
 	err = player.Play(selectedVariant.URL)
 	if err != nil {
 		return fmt.Errorf("failed to play stream: %w", err)
@@ -385,7 +362,6 @@ func handleStreamingSelection(imdbID string) error {
 }
 
 func parseIMDbID(imdbID string) (stream.MediaType, int, int) {
-	// Check if it's a TV episode (format: tt1234567/1-2)
 	parts := strings.Split(imdbID, "/")
 	if len(parts) == 2 {
 		seParts := strings.Split(parts[1], "-")
@@ -411,24 +387,20 @@ func selectStreamVariant(variants []stream.StreamVariant) (*stream.StreamVariant
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &variants[idx], nil
 }
 
-// getTitleForPlayer formats the title for the MPV player window
 func getTitleForPlayer(imdbID string, mediaType stream.MediaType, season, episode int) string {
-	// Create a client for fetching title info
 	client := &http.Client{
 		Transport: &customTransport{http.DefaultTransport},
 	}
 	
-	// Extract the base IMDb ID (remove season/episode info)
 	baseID := imdbID
 	if strings.Contains(imdbID, "/") {
 		baseID = strings.Split(imdbID, "/")[0]
 	}
 	
-	// Fetch title information from IMDb
 	titleInfo, err := imdb.NewTitle(client, baseID)
 	if err != nil {
 		log.Printf("Warning: Could not fetch title info: %v", err)
@@ -437,7 +409,6 @@ func getTitleForPlayer(imdbID string, mediaType stream.MediaType, season, episod
 	
 	playerTitle := titleInfo.Name
 	
-	// Add season and episode information for TV shows
 	if mediaType == stream.TV {
 		if season > 0 && episode > 0 {
 			playerTitle = fmt.Sprintf("%s - S%02dE%02d", titleInfo.Name, season, episode)
@@ -446,7 +417,6 @@ func getTitleForPlayer(imdbID string, mediaType stream.MediaType, season, episod
 		}
 	}
 	
-	// Add year if available
 	if titleInfo.Year > 0 {
 		playerTitle = fmt.Sprintf("%s (%d)", playerTitle, titleInfo.Year)
 	}
