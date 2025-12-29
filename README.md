@@ -25,9 +25,7 @@ go build -o kino .
 ```bash
 ./kino
 ```
-
 or 
-
 ```bash
 ./kino "The Matrix"
 ```
@@ -43,8 +41,8 @@ or
 - [x] Refactor [`main.go`](main.go:1)
 - [ ] Fix extractor decoder issue
 - [ ] Add download functionality
-- [ ] Add subtitle support
 - [ ] Implement watch tracking
+- [ ] Add subtitle support
 - [ ] Prepare first release
 - [ ] Add anime support (AllAnime)
 

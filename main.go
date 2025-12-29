@@ -358,14 +358,19 @@ func handleStreamingSelection(imdbID string) error {
 		player.CacheSize = *cacheSize
 		player.Title = title
 		
+		// Start playback in a goroutine
+		playbackDone := make(chan error, 1)
 		startTime := time.Now()
-		err = player.Play(selectedVariant.URL)
-		duration := int(time.Since(startTime).Seconds())
 		
-		if duration > 0 {
-			tracking.RecordWatch(imdbID, titleInfo.Name, getMediaTypeString(mediaType), season, episode, duration)
-		}
+		go func() {
+			err := player.Play(selectedVariant.URL)
+			playbackDone <- err
+		}()
 		
+		// Give the player a moment to start
+		time.Sleep(500 * time.Millisecond)
+		
+		// Show menu while playback is running
 		client := &http.Client{
 			Transport: &customTransport{http.DefaultTransport},
 		}
@@ -373,67 +378,93 @@ func handleStreamingSelection(imdbID string) error {
 		_, _, nextErr := menu.GetNextEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 		_, _, prevErr := menu.GetPreviousEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 		
-		action, err := menu.ShowPostPlayMenu(getMenuMediaType(mediaType), nextErr == nil, prevErr == nil)
+		action, err := menu.ShowPostPlayMenu(getMediaTypeString(mediaType), nextErr == nil, prevErr == nil)
 		if err != nil {
+			// Wait for playback to finish if user exits
+			<-playbackDone
 			return nil
 		}
 		
+		// Handle menu actions
 		switch action {
-		case "▶ Next Episode":
+		case "next":
 			newSeason, newEpisode, err := menu.GetNextEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 			if err != nil {
 				fmt.Printf("\nError: %v\n", err)
+				<-playbackDone
 				return nil
 			}
 			imdbID = fmt.Sprintf("%s/%d-%d", strings.Split(imdbID, "/")[0], newSeason, newEpisode)
 			season, episode = newSeason, newEpisode
 			variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
 			if err != nil {
+				<-playbackDone
 				return fmt.Errorf("failed to get streaming variants: %w", err)
 			}
 			selectedVariant, err = selectStreamVariant(variants)
 			if err != nil {
+				<-playbackDone
 				return err
 			}
+			// Current playback will continue until it finishes
+			<-playbackDone
 			continue
 			
-		case "🔄 Replay":
-			continue
+		case "replay":
+			// Let current playback continue
+			<-playbackDone
 			
-		case "◀ Previous Episode":
+		case "previous":
 			newSeason, newEpisode, err := menu.GetPreviousEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 			if err != nil {
 				fmt.Printf("\nError: %v\n", err)
+				<-playbackDone
 				return nil
 			}
 			imdbID = fmt.Sprintf("%s/%d-%d", strings.Split(imdbID, "/")[0], newSeason, newEpisode)
 			season, episode = newSeason, newEpisode
 			variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
 			if err != nil {
+				<-playbackDone
 				return fmt.Errorf("failed to get streaming variants: %w", err)
 			}
 			selectedVariant, err = selectStreamVariant(variants)
 			if err != nil {
+				<-playbackDone
 				return err
 			}
+			// Current playback will continue until it finishes
+			<-playbackDone
 			continue
 			
-		case "⚙️ Change Quality":
+		case "change_quality":
 			variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
 			if err != nil {
+				<-playbackDone
 				return fmt.Errorf("failed to get streaming variants: %w", err)
 			}
 			selectedVariant, err = selectStreamVariant(variants)
 			if err != nil {
+				<-playbackDone
 				return err
 			}
+			// Current playback will continue until it finishes
+			<-playbackDone
 			continue
 			
-		case "🔍 New Search":
+		case "select":
+			<-playbackDone
 			return nil
 			
-		case "❌ Quit":
+		case "quit":
+			<-playbackDone
 			os.Exit(0)
+		}
+		
+		// Record watch time
+		duration := int(time.Since(startTime).Seconds())
+		if duration > 0 {
+			tracking.RecordWatch(imdbID, titleInfo.Name, getMediaTypeString(mediaType), season, episode, duration)
 		}
 	}
 }
@@ -540,11 +571,4 @@ func getMediaTypeString(mediaType stream.MediaType) string {
 		return "tv"
 	}
 	return "movie"
-}
-
-func getMenuMediaType(mediaType stream.MediaType) menu.MediaType {
-	if mediaType == stream.TV {
-		return menu.TVShow
-	}
-	return menu.Movie
 }
