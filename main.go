@@ -15,8 +15,10 @@ import (
 
 	"github.com/StalkR/imdb"
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
+	"imdb/menu"
 	"imdb/player"
 	"imdb/stream"
+	"imdb/tracking"
 )
 
 var cacheSize = flag.String("cache", "12MiB", "Cache size limit for mpv (e.g., 30MiB, 50MiB)")
@@ -137,7 +139,7 @@ func interactiveSearch(client *http.Client) {
 			continue
 		}
 		
-		fmt.Println("Playback finished. Starting new search...")
+		fmt.Println()
 		fmt.Println()
 	}
 }
@@ -341,24 +343,99 @@ func handleStreamingSelection(imdbID string) error {
 		return err
 	}
 	
-	fmt.Printf("\nPlaying %s...\n", stream.FormatVariantDisplay(*selectedVariant))
+	titleInfo := getTitleInfo(imdbID)
 	
-	title := getTitleForPlayer(imdbID, mediaType, season, episode)
-	
-	player, err := player.New()
-	if err != nil {
-		return fmt.Errorf("failed to create player: %w", err)
+	for {
+		fmt.Printf("\nPlaying %s...\n", stream.FormatVariantDisplay(*selectedVariant))
+		
+		title := getTitleForPlayer(imdbID, mediaType, season, episode)
+		
+		player, err := player.New()
+		if err != nil {
+			return fmt.Errorf("failed to create player: %w", err)
+		}
+		
+		player.CacheSize = *cacheSize
+		player.Title = title
+		
+		startTime := time.Now()
+		err = player.Play(selectedVariant.URL)
+		duration := int(time.Since(startTime).Seconds())
+		
+		if duration > 0 {
+			tracking.RecordWatch(imdbID, titleInfo.Name, getMediaTypeString(mediaType), season, episode, duration)
+		}
+		
+		client := &http.Client{
+			Transport: &customTransport{http.DefaultTransport},
+		}
+		
+		_, _, nextErr := menu.GetNextEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
+		_, _, prevErr := menu.GetPreviousEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
+		
+		action, err := menu.ShowPostPlayMenu(getMenuMediaType(mediaType), nextErr == nil, prevErr == nil)
+		if err != nil {
+			return nil
+		}
+		
+		switch action {
+		case "▶ Next Episode":
+			newSeason, newEpisode, err := menu.GetNextEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
+			if err != nil {
+				fmt.Printf("\nError: %v\n", err)
+				return nil
+			}
+			imdbID = fmt.Sprintf("%s/%d-%d", strings.Split(imdbID, "/")[0], newSeason, newEpisode)
+			season, episode = newSeason, newEpisode
+			variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
+			if err != nil {
+				return fmt.Errorf("failed to get streaming variants: %w", err)
+			}
+			selectedVariant, err = selectStreamVariant(variants)
+			if err != nil {
+				return err
+			}
+			continue
+			
+		case "🔄 Replay":
+			continue
+			
+		case "◀ Previous Episode":
+			newSeason, newEpisode, err := menu.GetPreviousEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
+			if err != nil {
+				fmt.Printf("\nError: %v\n", err)
+				return nil
+			}
+			imdbID = fmt.Sprintf("%s/%d-%d", strings.Split(imdbID, "/")[0], newSeason, newEpisode)
+			season, episode = newSeason, newEpisode
+			variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
+			if err != nil {
+				return fmt.Errorf("failed to get streaming variants: %w", err)
+			}
+			selectedVariant, err = selectStreamVariant(variants)
+			if err != nil {
+				return err
+			}
+			continue
+			
+		case "⚙️ Change Quality":
+			variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
+			if err != nil {
+				return fmt.Errorf("failed to get streaming variants: %w", err)
+			}
+			selectedVariant, err = selectStreamVariant(variants)
+			if err != nil {
+				return err
+			}
+			continue
+			
+		case "🔍 New Search":
+			return nil
+			
+		case "❌ Quit":
+			os.Exit(0)
+		}
 	}
-	
-	player.CacheSize = *cacheSize
-	player.Title = title
-	
-	err = player.Play(selectedVariant.URL)
-	if err != nil {
-		return fmt.Errorf("failed to play stream: %w", err)
-	}
-	
-	return nil
 }
 
 func parseIMDbID(imdbID string) (stream.MediaType, int, int) {
@@ -437,4 +514,37 @@ func (e *customTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r.Header.Set("Accept-Language", "en") // avoid IP-based language detection
 	r.Header.Set("User-Agent", userAgent)
 	return e.RoundTripper.RoundTrip(r)
+}
+
+func getTitleInfo(imdbID string) *imdb.Title {
+	client := &http.Client{
+		Transport: &customTransport{http.DefaultTransport},
+	}
+	
+	baseID := imdbID
+	if strings.Contains(imdbID, "/") {
+		baseID = strings.Split(imdbID, "/")[0]
+	}
+	
+	titleInfo, err := imdb.NewTitle(client, baseID)
+	if err != nil {
+		log.Printf("Warning: Could not fetch title info: %v", err)
+		return &imdb.Title{Name: "Unknown Title"}
+	}
+	
+	return titleInfo
+}
+
+func getMediaTypeString(mediaType stream.MediaType) string {
+	if mediaType == stream.TV {
+		return "tv"
+	}
+	return "movie"
+}
+
+func getMenuMediaType(mediaType stream.MediaType) menu.MediaType {
+	if mediaType == stream.TV {
+		return menu.TVShow
+	}
+	return menu.Movie
 }

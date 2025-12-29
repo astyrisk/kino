@@ -17,7 +17,7 @@ func New() (*Player, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mpv not found in PATH: %w", err)
 	}
-	
+
 	return &Player{
 		playerPath: playerPath,
 	}, nil
@@ -25,23 +25,23 @@ func New() (*Player, error) {
 
 func (p *Player) Play(url string) error {
 	args := []string{}
-	
+
 	if p.CacheSize != "" {
 		args = append(args, fmt.Sprintf("--demuxer-max-bytes=%s", p.CacheSize))
 	}
-	
+
 	if p.Title != "" {
 		args = append(args, fmt.Sprintf("--title=%s", p.Title))
 		args = append(args, fmt.Sprintf("--force-media-title=%s", p.Title))
 	}
-	
+
 	args = append(args, url)
-	
+
 	cmd := exec.Command(p.playerPath, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// cmd.Stdout = os.Stdout
+	// cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	
+
 	return cmd.Run()
 }
 
@@ -55,6 +55,6 @@ func PlayURL(url string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return player.Play(url)
 }
