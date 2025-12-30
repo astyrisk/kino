@@ -11,7 +11,6 @@ import (
 	"imdb/stream"
 )
 
-// ParseIMDbID parses an IMDb ID string and returns the media type, season, and episode
 func ParseIMDbID(imdbID string) (stream.MediaType, int, int) {
 	parts := strings.Split(imdbID, "/")
 	if len(parts) == 2 {
@@ -26,7 +25,6 @@ func ParseIMDbID(imdbID string) (stream.MediaType, int, int) {
 	return stream.Movie, 0, 0
 }
 
-// GetTitleInfo retrieves the IMDb title information for the given ID
 func GetTitleInfo(client *http.Client, imdbID string) *imdb.Title {
 	baseID := imdbID
 	if strings.Contains(imdbID, "/") {
@@ -42,7 +40,6 @@ func GetTitleInfo(client *http.Client, imdbID string) *imdb.Title {
 	return titleInfo
 }
 
-// GetTitleForPlayer returns a formatted title string for the mpv player
 func GetTitleForPlayer(client *http.Client, imdbID string, mediaType stream.MediaType, season, episode int) string {	
 	baseID := imdbID
 	if strings.Contains(imdbID, "/") {
@@ -72,7 +69,6 @@ func GetTitleForPlayer(client *http.Client, imdbID string, mediaType stream.Medi
 	return playerTitle
 }
 
-// GetMediaTypeString converts stream.MediaType to a string representation
 func GetMediaTypeString(mediaType stream.MediaType) string {
 	if mediaType == stream.TV {
 		return "tv"

@@ -6,17 +6,18 @@ import (
 	"strings"
 
 	"github.com/StalkR/imdb"
+	"imdb/logger"
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
 )
 
-func HandleTitleSelection(client *http.Client, title *imdb.Title) (string, error) {
+func HandleTitleSelection(client *http.Client, title *imdb.Title, log *logger.Logger) (string, error) {
 	fullTitle, err := imdb.NewTitle(client, title.ID)
 	if err != nil {
 		return "", fmt.Errorf("error getting title details: %v", err)
 	}
 
 	if isTVShow(fullTitle) {
-		return handleTVShowSelection(client, fullTitle)
+		return handleTVShowSelection(client, fullTitle, log)
 	}
 
 	return title.ID, nil
@@ -27,9 +28,7 @@ func isTVShow(title *imdb.Title) bool {
 	       title.SeasonCount > 0
 }
 
-func handleTVShowSelection(client *http.Client, title *imdb.Title) (string, error) {
-	fmt.Println("\nTV Series detected!")
-	
+func handleTVShowSelection(client *http.Client, title *imdb.Title, log *logger.Logger) (string, error) {
 	for {
 		seasons, err := getSeasons(client, title)
 		if err != nil {
@@ -37,7 +36,7 @@ func handleTVShowSelection(client *http.Client, title *imdb.Title) (string, erro
 		}
 
 		if len(seasons) == 0 {
-			fmt.Println("No seasons found. Returning main title ID.")
+			log.ShowInfo("No seasons found. Returning main title ID.")
 			return title.ID, nil
 		}
 
@@ -56,7 +55,7 @@ func handleTVShowSelection(client *http.Client, title *imdb.Title) (string, erro
 			}
 
 			if len(episodes) == 0 {
-				fmt.Println("No episodes found. Returning season ID.")
+				log.ShowInfo("No episodes found. Returning season ID.")
 				return fmt.Sprintf("%s/%d-1", title.ID, selectedSeason), nil
 			}
 

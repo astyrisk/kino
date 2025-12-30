@@ -8,6 +8,7 @@ import (
 
 	"github.com/StalkR/imdb"
 	"imdb/client"
+	"imdb/logger"
 	"imdb/playback"
 	"imdb/search"
 	"imdb/selection"
@@ -29,73 +30,74 @@ func main() {
 }
 
 func runInteractiveMode(httpClient *http.Client) {
+	log := logger.New()
+	
 	for {
-		selectedTitle, err := search.Interactive(httpClient)
+		selectedTitle, err := search.Interactive(httpClient, log)
 		if err != nil {
 			if err.Error() == "exit" {
 				return
 			}
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			log.Error(err.Error())
 			continue
 		}
 
-		finalID, err := selection.HandleTitleSelection(httpClient, selectedTitle)
+		finalID, err := selection.HandleTitleSelection(httpClient, selectedTitle, log)
 		if err != nil {
 			if err.Error() == "abort" {
-				fmt.Println("Selection cancelled.")
-				fmt.Println()
+				log.ShowInfo("Selection cancelled.")
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			log.Error(err.Error())
 			continue
 		}
 
-		fmt.Printf("\nSelected IMDb ID: %s\n\n", finalID)
+		log.ShowStatus(fmt.Sprintf("Selected IMDb ID: %s", finalID))
 		
-		err = playback.HandleStreaming(httpClient, finalID, *cacheSize)
+		err = playback.HandleStreaming(httpClient, finalID, *cacheSize, log)
 		if err != nil {
 			if err.Error() == "abort" {
-				fmt.Println("Streaming cancelled.")
-				fmt.Println()
+				log.ShowInfo("Streaming cancelled.")
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			log.Error(err.Error())
 			continue
 		}
 		
-		fmt.Println()
-		fmt.Println()
+		log.ClearScreen()
 	}
 }
 
 func runSingleSearchMode(httpClient *http.Client, query string) {
+	log := logger.New()
+	
 	results, err := imdb.SearchTitle(httpClient, query)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		log.Error(err.Error())
 		os.Exit(2)
 	}
 	if len(results) == 0 {
-		fmt.Fprintf(os.Stderr, "No results found.\n")
+		log.Error("No results found.")
 		os.Exit(3)
 	}
 
 	selectedTitle, err := search.SelectTitle(results)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		log.Error(err.Error())
 		os.Exit(4)
 	}
 
-	finalID, err := selection.HandleTitleSelection(httpClient, selectedTitle)
+	finalID, err := selection.HandleTitleSelection(httpClient, selectedTitle, log)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		log.Error(err.Error())
 		os.Exit(5)
 	}
 
-	fmt.Printf("\nSelected IMDb ID: %s\n\n", finalID)
+	log.ShowStatus(fmt.Sprintf("Selected IMDb ID: %s", finalID))
 	
-	err = playback.HandleStreaming(httpClient, finalID, *cacheSize)
+	err = playback.HandleStreaming(httpClient, finalID, *cacheSize, log)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		log.Error(err.Error())
 		os.Exit(6)
 	}
 }

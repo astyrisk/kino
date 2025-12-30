@@ -9,32 +9,43 @@ import (
 
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
 	"imdb/format"
+	"imdb/logger"
 	"imdb/menu"
 	"imdb/player"
 	"imdb/stream"
 	"imdb/tracking"
 )
 
-func HandleStreaming(client *http.Client, imdbID, cacheSize string) error {
+func HandleStreaming(client *http.Client, imdbID, cacheSize string, log *logger.Logger) error {
 	if !player.IsAvailable() {
-		fmt.Println("\nWarning: mpv not found in PATH")
-		fmt.Println("Please install mpv to enable streaming playback")
-		fmt.Println("On Ubuntu/Debian: sudo apt install mpv")
-		fmt.Println("On macOS: brew install mpv")
-		fmt.Println("On Windows: choco install mpv")
+		log.ShowInfo("Warning: mpv not found in PATH\nPlease install mpv to enable streaming playback\nOn Ubuntu/Debian: sudo apt install mpv\nOn macOS: brew install mpv\nOn Windows: choco install mpv")
 		return nil
 	}
 	
 	mediaType, season, episode := format.ParseIMDbID(imdbID)
 	
-	fmt.Println("\nFetching streaming options...")
-	variants, err := stream.GetStreamVariants(imdbID, mediaType, season, episode)
-	if err != nil {
-		return fmt.Errorf("failed to get streaming variants: %w", err)
-	}
+	log.ShowStatus("Fetching streaming options...")
 	
-	if len(variants) == 0 {
-		return fmt.Errorf("no streaming variants found")
+	var variants []stream.StreamVariant
+	var err error
+	
+	// Check if variants are cached
+	if cachedVariants, exists := GetCachedVariants(imdbID); exists {
+		log.ShowMessage("Using cached stream variants...")
+		variants = cachedVariants
+	} else {
+		// Fetch and cache variants
+		variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
+		if err != nil {
+			return fmt.Errorf("failed to get streaming variants: %w", err)
+		}
+		
+		if len(variants) == 0 {
+			return fmt.Errorf("no streaming variants found")
+		}
+		
+		// Cache the variants
+		SetCachedVariants(imdbID, variants)
 	}
 	
 	selectedVariant, err := selectStreamVariant(variants)
@@ -45,7 +56,7 @@ func HandleStreaming(client *http.Client, imdbID, cacheSize string) error {
 	titleInfo := format.GetTitleInfo(client, imdbID)
 	
 	for {
-		fmt.Printf("\nPlaying %s...\n", stream.FormatVariantDisplay(*selectedVariant))
+		log.ShowStatus(fmt.Sprintf("Playing %s...", stream.FormatVariantDisplay(*selectedVariant)))
 		
 		title := format.GetTitleForPlayer(client, imdbID, mediaType, season, episode)
 		
@@ -70,7 +81,7 @@ func HandleStreaming(client *http.Client, imdbID, cacheSize string) error {
 		_, _, nextErr := menu.GetNextEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 		_, _, prevErr := menu.GetPreviousEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 		
-		action, err := menu.ShowPostPlayMenu(format.GetMediaTypeString(mediaType), nextErr == nil, prevErr == nil)
+		action, err := menu.ShowPostPlayMenu(format.GetMediaTypeString(mediaType), nextErr == nil, prevErr == nil, titleInfo.Name, season, episode)
 		if err != nil {
 			<-playbackDone
 			return nil
@@ -78,19 +89,25 @@ func HandleStreaming(client *http.Client, imdbID, cacheSize string) error {
 		
 		switch action {
 		case "next":
+			mpvPlayer.Stop()
 			newSeason, newEpisode, err := menu.GetNextEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 			if err != nil {
-				fmt.Printf("\nError: %v\n", err)
+				log.Error(err.Error())
 				<-playbackDone
 				return nil
 			}
 			imdbID = fmt.Sprintf("%s/%d-%d", strings.Split(imdbID, "/")[0], newSeason, newEpisode)
 			season, episode = newSeason, newEpisode
+			
+			// Clear cache for new episode and fetch variants
+			ClearCachedVariants(imdbID)
 			variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
 			if err != nil {
 				<-playbackDone
 				return fmt.Errorf("failed to get streaming variants: %w", err)
 			}
+			SetCachedVariants(imdbID, variants)
+			
 			selectedVariant, err = selectStreamVariant(variants)
 			if err != nil {
 				<-playbackDone
@@ -103,19 +120,25 @@ func HandleStreaming(client *http.Client, imdbID, cacheSize string) error {
 			<-playbackDone
 			
 		case "previous":
+			mpvPlayer.Stop()
 			newSeason, newEpisode, err := menu.GetPreviousEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 			if err != nil {
-				fmt.Printf("\nError: %v\n", err)
+				log.Error(err.Error())
 				<-playbackDone
 				return nil
 			}
 			imdbID = fmt.Sprintf("%s/%d-%d", strings.Split(imdbID, "/")[0], newSeason, newEpisode)
 			season, episode = newSeason, newEpisode
+			
+			// Clear cache for new episode and fetch variants
+			ClearCachedVariants(imdbID)
 			variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
 			if err != nil {
 				<-playbackDone
 				return fmt.Errorf("failed to get streaming variants: %w", err)
 			}
+			SetCachedVariants(imdbID, variants)
+			
 			selectedVariant, err = selectStreamVariant(variants)
 			if err != nil {
 				<-playbackDone
@@ -125,11 +148,20 @@ func HandleStreaming(client *http.Client, imdbID, cacheSize string) error {
 			continue
 			
 		case "change_quality":
-			variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
-			if err != nil {
-				<-playbackDone
-				return fmt.Errorf("failed to get streaming variants: %w", err)
+			mpvPlayer.Stop()
+			// Use cached variants instead of re-fetching
+			if cachedVariants, exists := GetCachedVariants(imdbID); exists {
+				variants = cachedVariants
+			} else {
+				// Fallback to fetching if not cached
+				variants, err = stream.GetStreamVariants(imdbID, mediaType, season, episode)
+				if err != nil {
+					<-playbackDone
+					return fmt.Errorf("failed to get streaming variants: %w", err)
+				}
+				SetCachedVariants(imdbID, variants)
 			}
+			
 			selectedVariant, err = selectStreamVariant(variants)
 			if err != nil {
 				<-playbackDone

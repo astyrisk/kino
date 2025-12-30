@@ -49,7 +49,7 @@ func fetchContent(url, referer string) (string, error) {
 		req.Header.Set("Referer", referer)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetching page %q: %w", url, err)
 	}

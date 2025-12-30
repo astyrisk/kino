@@ -97,7 +97,7 @@ func (opts ResolveOptions) ResolveVariants() (string, error) {
 			logDebug("Failed to parse URL: %v", err)
 			continue
 		}
-		resp, err := client.Get(parsedURL.String())
+		resp, err := httpClient.Get(parsedURL.String())
 		if err != nil {
 			logDebug("Failed to fetch: %v", err)
 			continue
@@ -147,7 +147,7 @@ func (o ResolveOptions) ResolveStreamVariants() ([]StreamVariant, error) {
 	}
 	logDebug("Fetching master playlist")
 
-	resp, err := client.Get(masterURL)
+	resp, err := httpClient.Get(masterURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetching master playlist %q: %w", masterURL, err)
 	}

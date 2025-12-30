@@ -5,14 +5,24 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"imdb/client"
 )
 
-const (
-	defaultHTTPTimeout = 10 * time.Second
-	userAgent          = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
+const defaultHTTPTimeout = 10 * time.Second
+
+var (
+	debugMode = os.Getenv("DEBUG") == "1"
+	// httpClient is the shared HTTP client instance with custom transport
+	httpClient = &http.Client{
+		Timeout:   defaultHTTPTimeout,
+		Transport: client.New().Transport,
+	}
 )
 
-var debugMode = os.Getenv("DEBUG") == "1"
+// Note: These logging functions use the standard log package instead of the logger
+// to avoid clearing the screen for every debug/info message during extraction.
+// The main application flow uses the logger for user-facing messages.
 
 func logInfo(format string, v ...interface{}) {
 	log.Printf("[INFO] "+format, v...)
@@ -30,20 +40,4 @@ func logDebug(format string, v ...interface{}) {
 	if debugMode {
 		log.Printf("[DEBUG] "+format, v...)
 	}
-}
-
-type customTransport struct {
-	http.RoundTripper
-}
-
-func (e *customTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	defer time.Sleep(time.Second)
-	r.Header.Set("Accept-Language", "en")
-	r.Header.Set("User-Agent", userAgent)
-	return e.RoundTripper.RoundTrip(r)
-}
-
-var client = &http.Client{
-	Timeout:   defaultHTTPTimeout,
-	Transport: &customTransport{http.DefaultTransport},
 }

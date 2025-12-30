@@ -12,7 +12,7 @@ import (
 
 // ShowPostPlayMenu displays a simple menu like ani-cli
 // Returns: "next", "replay", "previous", "select", "change_quality", or "quit"
-func ShowPostPlayMenu(mediaType string, hasNext, hasPrev bool) (string, error) {
+func ShowPostPlayMenu(mediaType string, hasNext, hasPrev bool, title string, season, episode int) (string, error) {
 	var options []string
 	
 	if mediaType == "tv" {
@@ -34,8 +34,7 @@ func ShowPostPlayMenu(mediaType string, hasNext, hasPrev bool) (string, error) {
 		func(i int) string {
 			return options[i]
 		},
-		fuzzyfinder.WithPromptString("What would you like to do?"),
-		// Playing episode * of * [tv] or playing * [film]
+		fuzzyfinder.WithPromptString(buildPromptString(mediaType, title, season, episode)),
 	)
 	
 	if err != nil {
@@ -43,6 +42,13 @@ func ShowPostPlayMenu(mediaType string, hasNext, hasPrev bool) (string, error) {
 	}
 	
 	return options[idx], nil
+}
+
+func buildPromptString(mediaType string, title string, season, episode int) string {
+	if mediaType == "tv" && season > 0 && episode > 0 {
+		return fmt.Sprintf("Playing episode %d of %s...", episode, title)
+	}
+	return fmt.Sprintf("Playing %s...", title)
 }
 
 // GetNextEpisode returns the next episode (season, episode)

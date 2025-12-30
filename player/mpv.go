@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 )
 
 type Player struct {
 	playerPath string
 	CacheSize  string
 	Title      string
+	cmd        *exec.Cmd
+	mu         sync.Mutex
 }
 
 func New() (*Player, error) {
@@ -24,6 +27,9 @@ func New() (*Player, error) {
 }
 
 func (p *Player) Play(url string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
 	args := []string{}
 
 	if p.CacheSize != "" {
@@ -37,12 +43,21 @@ func (p *Player) Play(url string) error {
 
 	args = append(args, url)
 
-	cmd := exec.Command(p.playerPath, args...)
+	p.cmd = exec.Command(p.playerPath, args...)
 	// cmd.Stdout = os.Stdout
 	// cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	p.cmd.Stdin = os.Stdin
 
-	return cmd.Run()
+	return p.cmd.Run()
+}
+
+func (p *Player) Stop() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	if p.cmd != nil && p.cmd.Process != nil {
+		p.cmd.Process.Kill()
+	}
 }
 
 func IsAvailable() bool {
