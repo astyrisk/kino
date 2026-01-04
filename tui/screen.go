@@ -1,12 +1,12 @@
-package logger
+package tui
 
 import (
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
-	"syscall"
-	"unsafe"
+
+	"golang.org/x/term"
 )
 
 const (
@@ -29,46 +29,30 @@ func ClearScreen() {
 	cmd.Run()
 }
 
-type winsize struct {
-	Row    uint16
-	Col    uint16
-	Xpixel uint16
-	Ypixel uint16
-}
-
 func getTerminalSize() (int, int) {
-	ws := &winsize{}
-	retCode, _, _ := syscall.Syscall(syscall.SYS_IOCTL,
-		uintptr(syscall.Stdin),
-		uintptr(syscall.TIOCGWINSZ),
-		uintptr(unsafe.Pointer(ws)))
-
-	if int(retCode) == -1 {
+	width, height, err := term.GetSize(int(os.Stdin.Fd()))
+	if err != nil {
 		return 24, 80
 	}
-	return int(ws.Row), int(ws.Col)
+	return height, width
 }
 
-func showAtBottom(message string, color string) {
+func ShowAtBottom(message string, color string) {
 	rows, _ := getTerminalSize()
-	
+
 	newlines := rows - 1
-	
+
 	if newlines < 1 {
 		newlines = 1
 	}
-	
+
 	for i := 0; i < newlines; i++ {
 		fmt.Println()
 	}
-	
+
 	fmt.Print(color + message + colorDefault)
 }
 
-func ShowAtBottom(message string) {
-	showAtBottom(message, colorDefault)
-}
-
-func ShowColoredAtBottom(message string, color string) {
-	showAtBottom(message, color)
+func ShowPromptAtBottom(prompt string) {
+	ShowAtBottom(prompt, colorDefault)
 }

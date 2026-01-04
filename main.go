@@ -6,19 +6,18 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/StalkR/imdb"
 	"imdb/client"
-	"imdb/logger"
 	"imdb/playback"
-	"imdb/search"
-	"imdb/selection"
+	"imdb/tui"
+
+	"github.com/StalkR/imdb"
 )
 
 var cacheSize = flag.String("cache", "12MiB", "Cache size limit for mpv (e.g., 30MiB, 50MiB)")
 
 func main() {
 	flag.Parse()
-	
+
 	httpClient := client.New()
 
 	if flag.NArg() == 0 {
@@ -30,10 +29,10 @@ func main() {
 }
 
 func runInteractiveMode(httpClient *http.Client) {
-	log := logger.New()
-	
+	log := tui.New()
+
 	for {
-		selectedTitle, err := search.Interactive(httpClient, log)
+		selectedTitle, err := tui.Interactive(httpClient, log)
 		if err != nil {
 			if err.Error() == "exit" {
 				return
@@ -42,7 +41,7 @@ func runInteractiveMode(httpClient *http.Client) {
 			continue
 		}
 
-		finalID, err := selection.HandleTitleSelection(httpClient, selectedTitle, log)
+		finalID, err := tui.HandleTitleSelection(httpClient, selectedTitle, log)
 		if err != nil {
 			if err.Error() == "abort" {
 				log.ShowInfo("Selection cancelled.")
@@ -53,7 +52,7 @@ func runInteractiveMode(httpClient *http.Client) {
 		}
 
 		log.ShowStatus(fmt.Sprintf("Selected IMDb ID: %s", finalID))
-		
+
 		err = playback.HandleStreaming(httpClient, finalID, *cacheSize, log)
 		if err != nil {
 			if err.Error() == "abort" {
@@ -63,14 +62,14 @@ func runInteractiveMode(httpClient *http.Client) {
 			log.Error(err.Error())
 			continue
 		}
-		
+
 		log.ClearScreen()
 	}
 }
 
 func runSingleSearchMode(httpClient *http.Client, query string) {
-	log := logger.New()
-	
+	log := tui.New()
+
 	results, err := imdb.SearchTitle(httpClient, query)
 	if err != nil {
 		log.Error(err.Error())
@@ -81,20 +80,20 @@ func runSingleSearchMode(httpClient *http.Client, query string) {
 		os.Exit(3)
 	}
 
-	selectedTitle, err := search.SelectTitle(results)
+	selectedTitle, err := tui.SelectTitle(results)
 	if err != nil {
 		log.Error(err.Error())
 		os.Exit(4)
 	}
 
-	finalID, err := selection.HandleTitleSelection(httpClient, selectedTitle, log)
+	finalID, err := tui.HandleTitleSelection(httpClient, selectedTitle, log)
 	if err != nil {
 		log.Error(err.Error())
 		os.Exit(5)
 	}
 
 	log.ShowStatus(fmt.Sprintf("Selected IMDb ID: %s", finalID))
-	
+
 	err = playback.HandleStreaming(httpClient, finalID, *cacheSize, log)
 	if err != nil {
 		log.Error(err.Error())

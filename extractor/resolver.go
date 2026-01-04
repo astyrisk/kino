@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"fmt"
+	"imdb/client"
 	"io"
 	"log"
 	"net/http"
@@ -47,13 +48,13 @@ func (opts ResolveOptions) ResolveVariants() (string, error) {
 	if opts.Type == TV {
 		mediaType = "TV show"
 	}
-	logInfo("Resolving stream for %s (%s)...", mediaType, opts.IMDBID)
+	client.LogInfo("Resolving stream for %s (%s)...", mediaType, opts.IMDBID)
 
 	embedURL, err := opts.constructEmbedURL()
 	if err != nil {
 		return "", err
 	}
-	logDebug("Built embed URL")
+	client.LogDebug("Built embed URL")
 
 	embedHTML, err := fetchContent(embedURL, "")
 	if err != nil {
@@ -64,7 +65,7 @@ func (opts ResolveOptions) ResolveVariants() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	logSuccess("Extracted RCP URL")
+	client.LogSuccess("Extracted RCP URL")
 
 	rcpHTML, err := fetchContent(httpsScheme+rcpURL, "")
 	if err != nil {
@@ -75,7 +76,7 @@ func (opts ResolveOptions) ResolveVariants() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	logSuccess("Extracted ProRCP URL")
+	client.LogSuccess("Extracted ProRCP URL")
 
 	proRCPHTML, err := fetchContent(cloudnestraBaseURL+proRCPURL, cloudnestraBaseURL)
 	if err != nil {
@@ -86,23 +87,23 @@ func (opts ResolveOptions) ResolveVariants() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	logSuccess("Decoded stream URL")
+	client.LogSuccess("Decoded stream URL")
 
 	decodedArr := processAndDeduplicateStreamURLs(decodedURL)
 
 	for _, testURL := range decodedArr {
-		logDebug("Testing URL viability")
+		client.LogDebug("Testing URL viability")
 		parsedURL, err := url.Parse(testURL)
 		if err != nil {
-			logDebug("Failed to parse URL: %v", err)
+			client.LogDebug("Failed to parse URL: %v", err)
 			continue
 		}
-		resp, err := httpClient.Get(parsedURL.String())
+		resp, err := client.HttpClient.Get(parsedURL.String())
 		if err != nil {
-			logDebug("Failed to fetch: %v", err)
+			client.LogDebug("Failed to fetch: %v", err)
 			continue
 		}
-		logDebug("Response status: %d %s", resp.StatusCode, resp.Status)
+		client.LogDebug("Response status: %d %s", resp.StatusCode, resp.Status)
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			return parsedURL.String(), nil
@@ -114,7 +115,7 @@ func (opts ResolveOptions) ResolveVariants() (string, error) {
 
 func processAndDeduplicateStreamURLs(decodedURL string) []string {
 	streamURLs := strings.Split(decodedURL, "or")
-	logDebug("Processing %d stream URLs", len(streamURLs))
+	client.LogDebug("Processing %d stream URLs", len(streamURLs))
 
 	uniqueURLs := make([]string, 0)
 	seenURLs := make(map[string]bool)
@@ -136,7 +137,7 @@ func processAndDeduplicateStreamURLs(decodedURL string) []string {
 		}
 	}
 
-	logDebug("Filtered to %d unique URLs", len(uniqueURLs))
+	client.LogDebug("Filtered to %d unique URLs", len(uniqueURLs))
 	return uniqueURLs
 }
 
@@ -145,9 +146,9 @@ func (o ResolveOptions) ResolveStreamVariants() ([]StreamVariant, error) {
 	if err != nil {
 		return nil, err
 	}
-	logDebug("Fetching master playlist")
+	client.LogDebug("Fetching master playlist")
 
-	resp, err := httpClient.Get(masterURL)
+	resp, err := client.HttpClient.Get(masterURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetching master playlist %q: %w", masterURL, err)
 	}
@@ -181,7 +182,7 @@ func (o ResolveOptions) ResolveStreamVariants() ([]StreamVariant, error) {
 						URL:        abs,
 					}
 					variants = append(variants, variant)
-					logDebug("Found variant: %s, %s", resolution, bandwidth)
+					client.LogDebug("Found variant: %s, %s", resolution, bandwidth)
 				}
 			}
 		}
@@ -191,7 +192,7 @@ func (o ResolveOptions) ResolveStreamVariants() ([]StreamVariant, error) {
 		return nil, fmt.Errorf("no stream variants found in master playlist %q", masterURL)
 	}
 
-	logSuccess("Found %d stream variant(s)", len(variants))
+	client.LogSuccess("Found %d stream variant(s)", len(variants))
 	return variants, nil
 }
 
@@ -222,10 +223,10 @@ func resolveRelativeURL(baseStr, refStr string) string {
 }
 
 func decodeStreamURL(proRCPHTML string) (string, error) {
-	logInfo("Decoding obfuscated stream...")
+	client.LogInfo("Decoding obfuscated stream...")
 
 	fileCounter = readCounter()
-	logDebug("File counter: %d", fileCounter)
+	client.LogDebug("File counter: %d", fileCounter)
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(proRCPHTML))
 	if err != nil {
@@ -234,7 +235,7 @@ func decodeStreamURL(proRCPHTML string) (string, error) {
 
 	divSel := doc.Find("div[style='display:none;']")
 	if divSel.Length() == 0 {
-		logError("No hidden div found")
+		client.LogError("No hidden div found")
 		return "", fmt.Errorf("no hidden div found")
 	}
 
@@ -242,59 +243,59 @@ func decodeStreamURL(proRCPHTML string) (string, error) {
 	divId, _ := divSel.Attr("id")
 	divHtml, _ := divSel.Html()
 
-	logDebug("Extracted encoded string (%d chars)", len(encodedString))
-	logDebug("Div ID: %s", divId)
+	client.LogDebug("Extracted encoded string (%d chars)", len(encodedString))
+	client.LogDebug("Div ID: %s", divId)
 
 	if encodedString != "" {
-		logDebug("Attempting decode")
+		client.LogDebug("Attempting decode")
 		decodedURL, err := DecodeString(encodedString)
 		if err == nil && decodedURL != "" {
 			return decodedURL, nil
 		}
-		logError("Decode failed: %v", err)
+		client.LogError("Decode failed: %v", err)
 	}
 
-	logInfo("Saving files for manual inspection")
+	client.LogInfo("Saving files for manual inspection")
 
 	scriptSel := doc.Find("script[src*='/sV05kUlNvOdOxvtC/']")
 	if scriptSel.Length() > 0 {
 		src, exists := scriptSel.First().Attr("src")
 		if exists {
 			fullURL := cloudnestraBaseURL + src
-			logDebug("JS file URL: %s", fullURL)
+			client.LogDebug("JS file URL: %s", fullURL)
 
 			jsContent, err := fetchContent(fullURL, cloudnestraBaseURL)
 			if err != nil {
-				logDebug("Failed to fetch JS content: %v", err)
+				client.LogDebug("Failed to fetch JS content: %v", err)
 			} else {
 				if err := os.MkdirAll(contentDirectory, 0755); err != nil {
-					logDebug("Failed to create content directory: %v", err)
+					client.LogDebug("Failed to create content directory: %v", err)
 				} else {
 					scriptPath := fmt.Sprintf("%s/%d.js", contentDirectory, fileCounter)
 					if err := os.WriteFile(scriptPath, []byte(jsContent), 0644); err != nil {
-						logDebug("Failed to write JS file: %v", err)
+						client.LogDebug("Failed to write JS file: %v", err)
 					} else {
-						logDebug("Saved JS: %s", scriptPath)
+						client.LogDebug("Saved JS: %s", scriptPath)
 					}
 				}
 			}
 		}
 	} else {
-		logDebug("No script found with expected pattern")
+		client.LogDebug("No script found with expected pattern")
 	}
 
 	htmlPath := fmt.Sprintf("%s/%d.html", contentDirectory, fileCounter)
 	htmlContent := fmt.Sprintf("<!DOCTYPE html>\n<html>\n\n<div id=\"%s\" style=\"display: none;\">\n%s\n</div>\n\n<div id=\"output\"></div>\n\n<script src=\"%d.js\"></script>\n\n<script>\ntry {\n    const decodedUrl = window.%s;\n    document.getElementById('output').innerText = 'Decoded URL: ' + decodedUrl;\n} catch (e) {\n    document.getElementById('output').innerText = 'Error decoding URL: ' + e.message;\n}\n</script>\n\n</html>", divId, divHtml, fileCounter, divId)
 	if err := os.WriteFile(htmlPath, []byte(htmlContent), 0644); err != nil {
-		logDebug("Failed to write HTML file: %v", err)
+		client.LogDebug("Failed to write HTML file: %v", err)
 	} else {
-		logDebug("Saved HTML: %s", htmlPath)
+		client.LogDebug("Saved HTML: %s", htmlPath)
 	}
 
 	fileCounter++
 	writeCounter(fileCounter)
 
-	logInfo("Files saved in %s/ directory", contentDirectory)
+	client.LogInfo("Files saved in %s/ directory", contentDirectory)
 	return "", nil
 }
 
@@ -319,12 +320,12 @@ func formatResolutionQuality(resolution string) string {
 	if !strings.Contains(resolution, "x") {
 		return resolution
 	}
-	
+
 	parts := strings.Split(resolution, "x")
 	if len(parts) != 2 {
 		return resolution
 	}
-	
+
 	height := parts[1]
 	qualityMap := map[string]string{
 		"1080": "1080p",
@@ -332,7 +333,7 @@ func formatResolutionQuality(resolution string) string {
 		"480":  "480p",
 		"360":  "360p",
 	}
-	
+
 	if quality, exists := qualityMap[height]; exists {
 		return quality
 	}
@@ -343,7 +344,7 @@ func formatBandwidth(bandwidth string) string {
 	if bandwidth == "" {
 		return ""
 	}
-	
+
 	if len(bandwidth) > 6 {
 		return bandwidth[:len(bandwidth)-6] + "." + bandwidth[len(bandwidth)-6:len(bandwidth)-5] + " Mbps"
 	}
@@ -351,11 +352,11 @@ func formatBandwidth(bandwidth string) string {
 }
 
 func printStreamVariants(variants []StreamVariant) {
-	logSuccess("Resolved %d stream variant(s):", len(variants))
+	client.LogSuccess("Resolved %d stream variant(s):", len(variants))
 	for i, variant := range variants {
 		resolution := formatResolutionQuality(variant.Resolution)
 		bandwidth := formatBandwidth(variant.Bandwidth)
-		
+
 		log.Printf("  [%d] %s (%s) - %s", i, resolution, bandwidth, variant.URL)
 	}
 }

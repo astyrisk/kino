@@ -1,4 +1,4 @@
-package logger
+package tui
 
 import (
 	"fmt"
@@ -18,26 +18,26 @@ func (l *Logger) ClearScreen() {
 
 func (l *Logger) ShowPrompt(message string) {
 	l.ClearScreen()
-	showAtBottom(message, colorBlue)
+	ShowAtBottom(message, colorBlue)
 }
 
 func (l *Logger) ShowInfo(message string) {
 	l.ClearScreen()
-	showAtBottom(message, colorDefault)
+	ShowAtBottom(message, colorDefault)
 }
 
 func (l *Logger) ShowError(message string) {
 	l.ClearScreen()
-	showAtBottom("Error: "+message, colorRed)
+	ShowAtBottom("Error: "+message, colorRed)
 }
 
 func (l *Logger) ShowSuccess(message string) {
 	l.ClearScreen()
-	showAtBottom(message, colorGreen)
+	ShowAtBottom(message, colorGreen)
 }
 
 func (l *Logger) ShowMessage(message string) {
-	showAtBottom(message, colorDefault)
+	ShowAtBottom(message, colorDefault)
 }
 
 func (l *Logger) ShowPromptWithContext(context, prompt string) {
@@ -46,12 +46,12 @@ func (l *Logger) ShowPromptWithContext(context, prompt string) {
 		fmt.Println(context)
 		fmt.Println()
 	}
-	showAtBottom(prompt, colorBlue)
+	ShowAtBottom(prompt, colorBlue)
 }
 
 func (l *Logger) ShowStatus(message string) {
 	l.ClearScreen()
-	showAtBottom(message, colorCyan)
+	ShowAtBottom(message, colorCyan)
 }
 
 func (l *Logger) Error(message string) {

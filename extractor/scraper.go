@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"fmt"
+	"imdb/client"
 	"io"
 	"net/http"
 	"regexp"
@@ -40,7 +41,7 @@ func (opts ResolveOptions) constructEmbedURL() (string, error) {
 }
 
 func fetchContent(url, referer string) (string, error) {
-	logDebug("Fetching page")
+	client.LogDebug("Fetching page")
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", fmt.Errorf("creating request for %q: %w", url, err)
@@ -49,7 +50,7 @@ func fetchContent(url, referer string) (string, error) {
 		req.Header.Set("Referer", referer)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := client.HttpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetching page %q: %w", url, err)
 	}
@@ -67,7 +68,7 @@ func fetchContent(url, referer string) (string, error) {
 }
 
 func extractRCPURL(embedHTML string) (string, error) {
-	logDebug("Parsing embed HTML for RCP URL")
+	client.LogDebug("Parsing embed HTML for RCP URL")
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(embedHTML))
 	if err != nil {
 		return "", fmt.Errorf("parsing embed HTML: %w", err)
@@ -81,7 +82,7 @@ func extractRCPURL(embedHTML string) (string, error) {
 }
 
 func extractProRCPURL(rcpHTML string) (string, error) {
-	logDebug("Extracting ProRCP URL from RCP page")
+	client.LogDebug("Extracting ProRCP URL from RCP page")
 	re := regexp.MustCompile(`src: '(/prorcp/[^']+)`)
 	match := re.FindStringSubmatch(rcpHTML)
 	if len(match) < 2 {
