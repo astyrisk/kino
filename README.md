@@ -30,21 +30,19 @@ or
 ./kino "The Matrix"
 ```
 ## Roadmap
+### extractor
+- [x] visrc
+- [ ] allanime
 
-### Completed
-- [x] TV show streaming with season/episode navigation
-- [x] Command-line search arguments
-- [x] MPV cache optimization
-- [x] Video title display
-
-### Todo
-- [x] Refactor [`main.go`](main.go:1)
-- [ ] Fix extractor decoder issue
+### cli
 - [ ] Add download functionality
-- [ ] Implement watch tracking
-- [ ] Add subtitle support
-- [ ] Prepare first release
-- [ ] Add anime support (AllAnime)
+- [ ] tracker
+
+### logger
+- [ ] refactor
+
+### stream
+- [ ] subtitle support
 
 
 https://zealotsofzenith.site/content/8a0800ba6c075107ec5922ebc951f4cc/7e39f90815d0cbca3fcb1178fb9fa803/page-13.html

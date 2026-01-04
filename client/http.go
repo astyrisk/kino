@@ -1,7 +1,9 @@
 package client
 
 import (
+	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -21,5 +23,38 @@ func (e *customTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func New() *http.Client {
 	return &http.Client{
 		Transport: &customTransport{http.DefaultTransport},
+	}
+}
+
+const defaultHTTPTimeout = 10 * time.Second
+
+var (
+	debugMode = os.Getenv("DEBUG") == "1"
+	// HttpClient is the shared HTTP client instance with custom transport
+	HttpClient = &http.Client{
+		Timeout:   defaultHTTPTimeout,
+		Transport: New().Transport,
+	}
+)
+
+// Note: These logging functions use the standard log package instead of the logger
+// to avoid clearing the screen for every debug/info message during extraction.
+// The main application flow uses the logger for user-facing messages.
+
+func LogInfo(format string, v ...interface{}) {
+	log.Printf("[INFO] "+format, v...)
+}
+
+func LogSuccess(format string, v ...interface{}) {
+	log.Printf("[SUCCESS] "+format, v...)
+}
+
+func LogError(format string, v ...interface{}) {
+	log.Printf("[ERROR] "+format, v...)
+}
+
+func LogDebug(format string, v ...interface{}) {
+	if debugMode {
+		log.Printf("[DEBUG] "+format, v...)
 	}
 }
