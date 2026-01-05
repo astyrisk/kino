@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"os"
 
-	"imdb/client"
-	"imdb/playback"
-	"imdb/tui"
+	"kino/client"
+	"kino/playback"
+	"kino/tui"
 
 	"github.com/StalkR/imdb"
 )
@@ -29,46 +29,62 @@ func main() {
 }
 
 func runInteractiveMode(httpClient *http.Client) {
-	log := tui.New()
-
-	for {
-		selectedTitle, err := tui.Interactive(httpClient, log)
-		if err != nil {
-			if err.Error() == "exit" {
-				return
-			}
-			log.Error(err.Error())
-			continue
-		}
-
-		finalID, err := tui.HandleTitleSelection(httpClient, selectedTitle, log)
-		if err != nil {
-			if err.Error() == "abort" {
-				log.ShowInfo("Selection cancelled.")
-				continue
-			}
-			log.Error(err.Error())
-			continue
-		}
-
-		log.ShowStatus(fmt.Sprintf("Selected IMDb ID: %s", finalID))
-
-		err = playback.HandleStreaming(httpClient, finalID, *cacheSize, log)
-		if err != nil {
-			if err.Error() == "abort" {
-				log.ShowInfo("Streaming cancelled.")
-				continue
-			}
-			log.Error(err.Error())
-			continue
-		}
-
-		log.ClearScreen()
+	log, err := tui.NewLogger()
+	if err != nil {
+		fmt.Printf("Error creating logger: %v\n", err)
+		return
 	}
+
+	log.Println("hi")
+	defer log.Close()
+
+
+
+	// for {
+	// selectedTitle, err := tui.Interactive(httpClient, log)
+	// if err != nil {
+	// 	if err.Error() == "exit" {
+	// 		return
+	// 	}
+	// 	log.Error(err.Error())
+	// 	continue
+	// }
+
+	// fmt.Println("selected title", selectedTitle)
+
+	// finalID, err := tui.HandleTitleSelection(httpClient, selectedTitle, log)
+	// if err != nil {
+	// 	if err.Error() == "abort" {
+	// 		log.ShowInfo("Selection cancelled.")
+	// 		continue
+	// 	}
+	// 	log.Error(err.Error())
+	// 	continue
+	// }
+
+	// log.ShowStatus(fmt.Sprintf("Selected IMDb ID: %s", finalID))
+
+	// err = playback.HandleStreaming(httpClient, finalID, *cacheSize, log)
+	// if err != nil {
+	// 	if err.Error() == "abort" {
+	// 		log.ShowInfo("Streaming cancelled.")
+	// 		continue
+	// 	}
+	// 	log.Error(err.Error())
+	// 	continue
+	// }
+
+	// log.Clear()
+	// }
 }
 
 func runSingleSearchMode(httpClient *http.Client, query string) {
-	log := tui.New()
+	log, err := tui.NewLogger()
+	if err != nil {
+		fmt.Printf("Error creating logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer log.Close()
 
 	results, err := imdb.SearchTitle(httpClient, query)
 	if err != nil {

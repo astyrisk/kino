@@ -2,7 +2,7 @@ package tui
 
 import (
 	"fmt"
-	"imdb/extractor"
+	"kino/extractor"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +13,16 @@ import (
 	"github.com/StalkR/imdb"
 )
 
+// extractBaseID extracts the base IMDb ID from a potentially compound ID
+// Compound IDs have format: "tt1234567/1-2" for TV episodes
+func extractBaseID(imdbID string) string {
+	if strings.Contains(imdbID, "/") {
+		return strings.Split(imdbID, "/")[0]
+	}
+	return imdbID
+}
+
+// ParseIMDbID parses a compound IMDb ID to extract media type and episode info
 func ParseIMDbID(imdbID string) (extractor.MediaType, int, int) {
 	parts := strings.Split(imdbID, "/")
 	if len(parts) == 2 {
@@ -23,31 +33,23 @@ func ParseIMDbID(imdbID string) (extractor.MediaType, int, int) {
 			return extractor.TV, season, episode
 		}
 	}
-
 	return extractor.Movie, 0, 0
 }
 
+// GetTitleInfo fetches title information from IMDb
 func GetTitleInfo(client *http.Client, imdbID string) *imdb.Title {
-	baseID := imdbID
-	if strings.Contains(imdbID, "/") {
-		baseID = strings.Split(imdbID, "/")[0]
-	}
-
+	baseID := extractBaseID(imdbID)
 	titleInfo, err := imdb.NewTitle(client, baseID)
 	if err != nil {
 		log.Printf("Warning: Could not fetch title info: %v", err)
 		return &imdb.Title{Name: "Unknown Title"}
 	}
-
 	return titleInfo
 }
 
+// GetTitleForPlayer generates a formatted title for the player
 func GetTitleForPlayer(client *http.Client, imdbID string, mediaType extractor.MediaType, season, episode int) string {
-	baseID := imdbID
-	if strings.Contains(imdbID, "/") {
-		baseID = strings.Split(imdbID, "/")[0]
-	}
-
+	baseID := extractBaseID(imdbID)
 	titleInfo, err := imdb.NewTitle(client, baseID)
 	if err != nil {
 		log.Printf("Warning: Could not fetch title info: %v", err)
@@ -84,11 +86,7 @@ func RecordWatch(imdbID, title, mediaType string, season, episode, duration int)
 		return err
 	}
 
-	baseID := imdbID
-	if strings.Contains(imdbID, "/") {
-		baseID = strings.Split(imdbID, "/")[0]
-	}
-
+	baseID := extractBaseID(imdbID)
 	epNum := "1"
 	if mediaType == "tv" && season > 0 && episode > 0 {
 		epNum = fmt.Sprintf("%d", episode)

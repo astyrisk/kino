@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"imdb/extractor"
-	"imdb/tui"
+	"kino/extractor"
+	"kino/tui"
 
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
 )

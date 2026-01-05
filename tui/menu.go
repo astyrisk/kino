@@ -13,6 +13,17 @@ import (
 	"github.com/ktr0731/go-fuzzyfinder"
 )
 
+// fuzzyFind is a helper function to reduce duplication in fuzzy finder calls
+func fuzzyFind(items []string, prompt string) (int, error) {
+	return fuzzyfinder.Find(
+		items,
+		func(i int) string {
+			return items[i]
+		},
+		fuzzyfinder.WithPromptString(prompt),
+	)
+}
+
 // ShowPostPlayMenu displays a simple menu like ani-cli
 // Returns: "next", "replay", "previous", "select", "change_quality", or "quit"
 func ShowPostPlayMenu(mediaType string, hasNext, hasPrev bool, title string, season, episode int) (string, error) {
@@ -32,13 +43,7 @@ func ShowPostPlayMenu(mediaType string, hasNext, hasPrev bool, title string, sea
 
 	options = append(options, "select", "change_quality", "quit")
 
-	idx, err := fuzzyfinder.Find(
-		options,
-		func(i int) string {
-			return options[i]
-		},
-		fuzzyfinder.WithPromptString(buildPromptString(mediaType, title, season, episode)),
-	)
+	idx, err := fuzzyFind(options, buildPromptString(mediaType, title, season, episode))
 
 	if err != nil {
 		return "", err
@@ -277,13 +282,7 @@ func selectSeason(seasons []int) (int, error) {
 	}
 	items[len(seasons)] = "← Go Back"
 
-	idx, err := fuzzyfinder.Find(
-		items,
-		func(i int) string {
-			return items[i]
-		},
-		fuzzyfinder.WithPromptString("Select a season:"),
-	)
+	idx, err := fuzzyFind(items, "Select a season:")
 
 	if err != nil {
 		return 0, err
@@ -303,13 +302,7 @@ func selectEpisode(episodes []int) (int, error) {
 	}
 	items[len(episodes)] = "← Go Back"
 
-	idx, err := fuzzyfinder.Find(
-		items,
-		func(i int) string {
-			return items[i]
-		},
-		fuzzyfinder.WithPromptString("Select an episode:"),
-	)
+	idx, err := fuzzyFind(items, "Select an episode:")
 
 	if err != nil {
 		return 0, err
