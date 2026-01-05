@@ -38,8 +38,6 @@ func runInteractiveMode(httpClient *http.Client) {
 	log.Println("hi")
 	defer log.Close()
 
-
-
 	// for {
 	// selectedTitle, err := tui.Interactive(httpClient, log)
 	// if err != nil {
