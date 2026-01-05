@@ -16,7 +16,6 @@ import (
 // extractBaseID extracts the base IMDb ID from a potentially compound ID
 // Compound IDs have format: "tt1234567/1-2" for TV episodes
 func extractBaseID(imdbID string) string {
-	if strings.Contains(imdbID, "/") {
 		return strings.Split(imdbID, "/")[0]
 	}
 	return imdbID
@@ -25,8 +24,6 @@ func extractBaseID(imdbID string) string {
 // ParseIMDbID parses a compound IMDb ID to extract media type and episode info
 func ParseIMDbID(imdbID string) (extractor.MediaType, int, int) {
 	parts := strings.Split(imdbID, "/")
-	if len(parts) == 2 {
-		seParts := strings.Split(parts[1], "-")
 		if len(seParts) == 2 {
 			season, _ := strconv.Atoi(seParts[0])
 			episode, _ := strconv.Atoi(seParts[1])

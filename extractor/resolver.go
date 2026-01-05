@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"fmt"
+	"imdb/client"
 	"io"
 	"kino/client"
 	"log"
