@@ -120,7 +120,7 @@ func Interactive(client *http.Client, log *Logger) (*imdb.Title, error) {
 				fmt.Println("\nGoodbye!")
 				return nil, fmt.Errorf("exit")
 			}
-			log.Error(fmt.Sprintf("Error reading input: %v", err))
+			log.ShowError(fmt.Sprintf("Error reading input: %v", err))
 			continue
 		}
 
@@ -134,7 +134,7 @@ func Interactive(client *http.Client, log *Logger) (*imdb.Title, error) {
 
 		results, err := imdb.SearchTitle(client, query)
 		if err != nil {
-			log.Error(fmt.Sprintf("Error searching: %v", err))
+			log.ShowError(fmt.Sprintf("Error searching: %v", err))
 			continue
 		}
 
@@ -149,7 +149,7 @@ func Interactive(client *http.Client, log *Logger) (*imdb.Title, error) {
 				log.ShowInfo("Search cancelled.")
 				continue
 			}
-			log.Error(err.Error())
+			log.ShowError(err.Error())
 			continue
 		}
 

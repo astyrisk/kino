@@ -215,7 +215,7 @@ func HandleStreaming(client *http.Client, imdbID, cacheSize string, log *tui.Log
 
 	// Check if variants are cached
 	if cachedVariants, exists := GetCachedVariants(imdbID); exists {
-		log.ShowMessage("Using cached stream variants...")
+		log.ShowStatus("Using cached stream variants...")
 		variants = cachedVariants
 	} else {
 		// Fetch and cache variants
@@ -276,7 +276,7 @@ func HandleStreaming(client *http.Client, imdbID, cacheSize string, log *tui.Log
 			mpvPlayer.Stop()
 			newSeason, newEpisode, err := tui.GetNextEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 			if err != nil {
-				log.Error(err.Error())
+				log.ShowError(err.Error())
 				<-playbackDone
 				return nil
 			}
@@ -307,7 +307,7 @@ func HandleStreaming(client *http.Client, imdbID, cacheSize string, log *tui.Log
 			mpvPlayer.Stop()
 			newSeason, newEpisode, err := tui.GetPreviousEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 			if err != nil {
-				log.Error(err.Error())
+				log.ShowError(err.Error())
 				<-playbackDone
 				return nil
 			}
