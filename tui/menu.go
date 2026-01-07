@@ -1,20 +1,20 @@
 package tui
 
 import (
-	"bufio"
 	"fmt"
 	"net/http"
-	"os"
-	"os/signal"
+
 	"strings"
-	"syscall"
 
 	"github.com/StalkR/imdb"
 	"github.com/ktr0731/go-fuzzyfinder"
 )
 
 // fuzzyFind is a helper function to reduce duplication in fuzzy finder calls
-func fuzzyFind(items []string, prompt string) (int, error) {
+func fuzzyFind(items []string, prompt string, log *Logger) (int, error) {
+	log.Suspend()
+	defer log.Resume()
+
 	return fuzzyfinder.Find(
 		items,
 		func(i int) string {
@@ -26,7 +26,7 @@ func fuzzyFind(items []string, prompt string) (int, error) {
 
 // ShowPostPlayMenu displays a simple menu like ani-cli
 // Returns: "next", "replay", "previous", "select", "change_quality", or "quit"
-func ShowPostPlayMenu(mediaType string, hasNext, hasPrev bool, title string, season, episode int) (string, error) {
+func ShowPostPlayMenu(mediaType string, hasNext, hasPrev bool, title string, season, episode int, log *Logger) (string, error) {
 	var options []string
 
 	if mediaType == "tv" {
@@ -43,7 +43,7 @@ func ShowPostPlayMenu(mediaType string, hasNext, hasPrev bool, title string, sea
 
 	options = append(options, "select", "change_quality", "quit")
 
-	idx, err := fuzzyFind(options, buildPromptString(mediaType, title, season, episode))
+	idx, err := fuzzyFind(options, buildPromptString(mediaType, title, season, episode), log)
 
 	if err != nil {
 		return "", err
@@ -105,26 +105,10 @@ func GetPreviousEpisode(client *http.Client, titleID string, season, episode int
 }
 
 func Interactive(client *http.Client, log *Logger) (*imdb.Title, error) {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	reader := bufio.NewReader(os.Stdin)
-
 	for {
 		// Show search prompt at bottom
-		log.ShowPrompt("Search kino: ")
+		query := log.PromptAtBottom("Search kino: ")
 
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			if err.Error() == "EOF" {
-				fmt.Println("\nGoodbye!")
-				return nil, fmt.Errorf("exit")
-			}
-			log.ShowError(fmt.Sprintf("Error reading input: %v", err))
-			continue
-		}
-
-		query := strings.TrimSpace(input)
 		if query == "" {
 			continue
 		}
@@ -143,7 +127,8 @@ func Interactive(client *http.Client, log *Logger) (*imdb.Title, error) {
 			continue
 		}
 
-		selectedTitle, err := SelectTitle(results)
+		selectedTitle, err := SelectTitle(results, log)
+
 		if err != nil {
 			if err.Error() == "abort" {
 				log.ShowInfo("Search cancelled.")
@@ -157,7 +142,10 @@ func Interactive(client *http.Client, log *Logger) (*imdb.Title, error) {
 	}
 }
 
-func SelectTitle(titles []imdb.Title) (*imdb.Title, error) {
+func SelectTitle(titles []imdb.Title, log *Logger) (*imdb.Title, error) {
+	log.Suspend()
+	defer log.Resume()
+
 	idx, err := fuzzyfinder.Find(
 		titles,
 		func(i int) string {
@@ -212,7 +200,7 @@ func handleTVShowSelection(client *http.Client, title *imdb.Title, log *Logger) 
 			return title.ID, nil
 		}
 
-		selectedSeason, err := selectSeason(seasons)
+		selectedSeason, err := selectSeason(seasons, log)
 		if err != nil {
 			if err.Error() == "abort" {
 				return "", fmt.Errorf("abort")
@@ -231,7 +219,7 @@ func handleTVShowSelection(client *http.Client, title *imdb.Title, log *Logger) 
 				return fmt.Sprintf("%s/%d-1", title.ID, selectedSeason), nil
 			}
 
-			selectedEpisode, err := selectEpisode(episodes)
+			selectedEpisode, err := selectEpisode(episodes, log)
 			if err != nil {
 				if err.Error() == "abort" {
 					break
@@ -275,14 +263,14 @@ func getEpisodes(client *http.Client, titleID string, season int) ([]int, error)
 	return episodes, nil
 }
 
-func selectSeason(seasons []int) (int, error) {
+func selectSeason(seasons []int, log *Logger) (int, error) {
 	items := make([]string, len(seasons)+1)
 	for i, season := range seasons {
 		items[i] = fmt.Sprintf("Season %d", season)
 	}
 	items[len(seasons)] = "← Go Back"
 
-	idx, err := fuzzyFind(items, "Select a season:")
+	idx, err := fuzzyFind(items, "Select a season:", log)
 
 	if err != nil {
 		return 0, err
@@ -295,14 +283,14 @@ func selectSeason(seasons []int) (int, error) {
 	return seasons[idx], nil
 }
 
-func selectEpisode(episodes []int) (int, error) {
+func selectEpisode(episodes []int, log *Logger) (int, error) {
 	items := make([]string, len(episodes)+1)
 	for i, episode := range episodes {
 		items[i] = fmt.Sprintf("Episode %d", episode)
 	}
 	items[len(episodes)] = "← Go Back"
 
-	idx, err := fuzzyFind(items, "Select an episode:")
+	idx, err := fuzzyFind(items, "Select an episode:", log)
 
 	if err != nil {
 		return 0, err
@@ -314,3 +302,23 @@ func selectEpisode(episodes []int) (int, error) {
 
 	return episodes[idx], nil
 }
+
+// func selectEpisode(episodes []int) (int, error) {
+// 	items := make([]string, len(episodes)+1)
+// 	for i, episode := range episodes {
+// 		items[i] = fmt.Sprintf("Episode %d", episode)
+// 	}
+// 	items[len(episodes)] = "← Go Back"
+
+// 	idx, err := fuzzyFind(items, "Select an episode:")
+
+// 	if err != nil {
+// 		return 0, err
+// 	}
+
+// 	if idx == len(items)-1 {
+// 		return 0, fmt.Errorf("abort")
+// 	}
+
+// 	return episodes[idx], nil
+// }

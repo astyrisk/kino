@@ -265,7 +265,7 @@ func HandleStreaming(client *http.Client, imdbID, cacheSize string, log *tui.Log
 		_, _, nextErr := tui.GetNextEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 		_, _, prevErr := tui.GetPreviousEpisode(client, strings.Split(imdbID, "/")[0], season, episode)
 
-		action, err := tui.ShowPostPlayMenu(tui.GetMediaTypeString(mediaType), nextErr == nil, prevErr == nil, titleInfo.Name, season, episode)
+		action, err := tui.ShowPostPlayMenu(tui.GetMediaTypeString(mediaType), nextErr == nil, prevErr == nil, titleInfo.Name, season, episode, log)
 		if err != nil {
 			<-playbackDone
 			return nil

@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"time"
 
 	"kino/client"
 	"kino/playback"
 	"kino/tui"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/StalkR/imdb"
 )
 
@@ -30,103 +28,91 @@ func main() {
 	runSingleSearchMode(httpClient, flag.Arg(0))
 }
 
-
-func runInteractiveMode(httpClient *http.Client) {
-	log, err := tui.NewLogger()
-	if err != nil {
-		fmt.Printf("Error creating logger: %v\n", err)
-		return
-	}
-	defer log.Close()
-
-	for {
-		switch ev := log.PollEvent().(type) {
-
-        case *tcell.EventResize:
-			log.Sync()
-			log.ShowInfo("Resized!")
-
-		case *tcell.EventKey:
-			if ev.Key() == tcell.KeyEscape {
-				return
-			}
-
-			if ev.Key() == tcell.KeyEnter {
-				// log.ShowInfo(fmt.Sprintf("Logged at %s", time.Now().Format("15:04:05")))
-				log.ShowStatus(fmt.Sprintf("Logged at %s", time.Now().Format("15:04:05")))
-			}
-		}
-	}
-}
-
 // func runInteractiveMode(httpClient *http.Client) {
 // 	log, err := tui.NewLogger()
-
 // 	if err != nil {
 // 		fmt.Printf("Error creating logger: %v\n", err)
 // 		return
 // 	}
-
-// 	log.Println("hi")
 // 	defer log.Close()
 
+// 	counter := 0
 // 	for {
-// 		// switch ev := log.PollEvent().(type) {
-// 		// switch ev := log.screen.PollEvent().(type) {
-// 		switch ev := log.GetScreen().PollEvent().(type) {
+// 		switch ev := log.PollEvent().(type) {
+
 // 		case *tcell.EventResize:
-// 			s.Sync()
-// 			logToBottom("Resized!") // Re-draw at new bottom
+// 			log.Sync()
+// 			log.ShowInfo("Resized!")
+
 // 		case *tcell.EventKey:
 // 			if ev.Key() == tcell.KeyEscape {
-// 				return
+// 				os.Exit(0)
 // 			}
+
 // 			if ev.Key() == tcell.KeyEnter {
-// 				logToBottom(fmt.Sprintf("Logged at %s", time.Now().Format("15:04:05")))
+// 				counter++
+// 				log.PrintAtBottom(fmt.Sprintf("Message #%d", counter))
+// 			}
+
+// 			if ev.Key() == tcell.KeyCtrlC {
+// 				counter++
+// 				input := log.PromptAtBottom("> kino: ")
+// 				log.PrintAtBottom(input)
 // 			}
 // 		}
 // 	}
-
-
-
-
-// 	// for {
-// 	// selectedTitle, err := tui.Interactive(httpClient, log)
-// 	// if err != nil {
-// 	// 	if err.Error() == "exit" {
-// 	// 		return
-// 	// 	}
-// 	// 	log.Error(err.Error())
-// 	// 	continue
-// 	// }
-
-// 	// fmt.Println("selected title", selectedTitle)
-
-// 	// finalID, err := tui.HandleTitleSelection(httpClient, selectedTitle, log)
-// 	// if err != nil {
-// 	// 	if err.Error() == "abort" {
-// 	// 		log.ShowInfo("Selection cancelled.")
-// 	// 		continue
-// 	// 	}
-// 	// 	log.Error(err.Error())
-// 	// 	continue
-// 	// }
-
-// 	// log.ShowStatus(fmt.Sprintf("Selected IMDb ID: %s", finalID))
-
-// 	// err = playback.HandleStreaming(httpClient, finalID, *cacheSize, log)
-// 	// if err != nil {
-// 	// 	if err.Error() == "abort" {
-// 	// 		log.ShowInfo("Streaming cancelled.")
-// 	// 		continue
-// 	// 	}
-// 	// 	log.Error(err.Error())
-// 	// 	continue
-// 	// }
-
-// 	// log.Clear()
-// 	// }
 // }
+
+func runInteractiveMode(httpClient *http.Client) {
+	log, err := tui.NewLogger()
+
+	if err != nil {
+		fmt.Printf("Error creating logger: %v\n", err)
+		return
+	}
+
+	defer log.Close()
+
+	for {
+		selectedTitle, err := tui.Interactive(httpClient, log)
+		if err != nil {
+			if err.Error() == "exit" {
+				return
+			}
+			log.ShowError(err.Error())
+			continue
+		}
+
+		// print selected title
+		log.ShowStatus(fmt.Sprintf("Selected title: %s", selectedTitle))
+		log.PrintAtBottom("Press Enter to continue...")
+		log.WaitForEnter()
+
+		finalID, err := tui.HandleTitleSelection(httpClient, selectedTitle, log)
+		if err != nil {
+			if err.Error() == "abort" {
+				log.ShowInfo("Selection cancelled.")
+				continue
+			}
+			log.ShowError(err.Error())
+			continue
+		}
+
+		log.ShowStatus(fmt.Sprintf("Selected IMDb ID: %s", finalID))
+
+		err = playback.HandleStreaming(httpClient, finalID, *cacheSize, log)
+		if err != nil {
+			if err.Error() == "abort" {
+				log.ShowInfo("Streaming cancelled.")
+				continue
+			}
+			log.ShowError(err.Error())
+			continue
+		}
+
+		log.Clear()
+	}
+}
 
 func runSingleSearchMode(httpClient *http.Client, query string) {
 	log, err := tui.NewLogger()
@@ -146,7 +132,7 @@ func runSingleSearchMode(httpClient *http.Client, query string) {
 		os.Exit(3)
 	}
 
-	selectedTitle, err := tui.SelectTitle(results)
+	selectedTitle, err := tui.SelectTitle(results, log)
 	if err != nil {
 		log.ShowError(err.Error())
 		os.Exit(4)
