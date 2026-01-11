@@ -12,18 +12,20 @@ import (
 	"strings"
 	"time"
 
+	httpclient "kino/internal/client"
+
 	"github.com/PuerkitoBio/goquery"
 )
 
 const (
-	vidsrcBaseURL        = "https://vidsrc-embed.ru"
-	cloudnestraBaseURL   = "https://cloudnestra.com"
-	defaultHTTPTimeout   = 10 * time.Second
-	contentDirectory     = "content"
-	counterFileName      = "content/counter.txt"
+	vidsrcBaseURL          = "https://vidsrc-embed.ru"
+	cloudnestraBaseURL     = "https://cloudnestra.com"
+	defaultHTTPTimeout     = 10 * time.Second
+	contentDirectory       = "content"
+	counterFileName        = "content/counter.txt"
 	placeholderReplacement = "cloudnestra.com"
-	httpsScheme          = "https:"
-	defaultStartCounter  = 1
+	httpsScheme            = "https:"
+	defaultStartCounter    = 1
 )
 
 // debugMode controls whether debug logs are shown
@@ -51,23 +53,7 @@ func logDebug(format string, v ...interface{}) {
 	}
 }
 
-var client = &http.Client{
-	Timeout:   defaultHTTPTimeout,
-	Transport: &customTransport{http.DefaultTransport},
-}
-
-const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
-
-type customTransport struct {
-	http.RoundTripper
-}
-
-func (e *customTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	defer time.Sleep(time.Second)         // don't go too fast or risk being blocked by awswaf
-	r.Header.Set("Accept-Language", "en") // avoid IP-based language detection
-	r.Header.Set("User-Agent", userAgent)
-	return e.RoundTripper.RoundTrip(r)
-}
+var client = httpclient.NewWithTimeout(defaultHTTPTimeout)
 
 var fileCounter int
 
@@ -188,6 +174,7 @@ func processAndDeduplicateStreamURLs(decodedURL string) []string {
 		"{v2}", placeholderReplacement,
 		"{v3}", placeholderReplacement,
 		"{v4}", placeholderReplacement,
+		"{v5}", placeholderReplacement,
 	)
 
 	for _, urlPart := range streamURLs {
@@ -360,6 +347,15 @@ func extractProRCPURL(rcpHTML string) (string, error) {
 }
 
 func decodeStreamURL(proRCPHTML string) (string, error) {
+	// New logic: Extract directly from Playerjs config
+	logInfo("Extracting stream URL from player config...")
+	re := regexp.MustCompile(`file:\s*"([^"]+)"`)
+	matches := re.FindStringSubmatch(proRCPHTML)
+	if len(matches) > 1 {
+		return matches[1], nil
+	}
+
+	/* Old extractor
 	logInfo("Decoding obfuscated stream...")
 
 	// Initialize counter
@@ -444,7 +440,8 @@ func decodeStreamURL(proRCPHTML string) (string, error) {
 	writeCounter(fileCounter)
 
 	logInfo("Files saved in %s/ directory", contentDirectory)
-	return "", nil
+	*/
+	return "", fmt.Errorf("failed to extract stream URL from player config")
 }
 
 // readCounter reads the counter from file
@@ -478,12 +475,12 @@ func formatResolutionQuality(resolution string) string {
 	if !strings.Contains(resolution, "x") {
 		return resolution
 	}
-	
+
 	parts := strings.Split(resolution, "x")
 	if len(parts) != 2 {
 		return resolution
 	}
-	
+
 	height := parts[1]
 	qualityMap := map[string]string{
 		"1080": "1080p",
@@ -491,7 +488,7 @@ func formatResolutionQuality(resolution string) string {
 		"480":  "480p",
 		"360":  "360p",
 	}
-	
+
 	if quality, exists := qualityMap[height]; exists {
 		return quality
 	}
@@ -503,7 +500,7 @@ func formatBandwidth(bandwidth string) string {
 	if bandwidth == "" {
 		return ""
 	}
-	
+
 	if len(bandwidth) > 6 {
 		return bandwidth[:len(bandwidth)-6] + "." + bandwidth[len(bandwidth)-6:len(bandwidth)-5] + " Mbps"
 	}
@@ -516,7 +513,7 @@ func printStreamVariants(variants []StreamVariant) {
 	for i, variant := range variants {
 		resolution := formatResolutionQuality(variant.Resolution)
 		bandwidth := formatBandwidth(variant.Bandwidth)
-		
+
 		log.Printf("  [%d] %s (%s) - %s", i, resolution, bandwidth, variant.URL)
 	}
 }

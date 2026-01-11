@@ -1,4 +1,4 @@
-module imdb
+module kino
 
 go 1.25.4
 
