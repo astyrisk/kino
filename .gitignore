@@ -1,0 +1,9 @@
+kino
+kino.exe
+
+*.swp
+*.swo
+\#*\#
+
+.idea/
+.vscode/

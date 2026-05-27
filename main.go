@@ -1,19 +1,17 @@
-/*kino: streams films right into mpv*/
-
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
-	"io"
+	"log"
 	"net/http"
 	"net/url"
-	"encoding/json"
-	"log"
-	fzf "github.com/junegunn/fzf/src"
+	"os"
+	"os/exec"
 
 	"kino/extractor"
+
+	fzf "github.com/junegunn/fzf/src"
 )
 
 type IMDBResponse struct {
@@ -21,18 +19,109 @@ type IMDBResponse struct {
 }
 
 type IMDBItem struct {
-	ID 	string	`json:"id"`
-	Title 	string	`json:"l"`
-	QID 	string	`json:"qid"`
-	Year 	int   	`json:"y"`
+	ID    string `json:"id"`
+	Title string `json:"l"`
+	QID   string `json:"qid"`
+	Year  int    `json:"y"`
 }
 
-func SearchIMDB(query string) ([]IMDBItem, error) {
-	encoded := url.QueryEscape(query)
-	// using the IMDB suggestion API "for now"
-	apiURL := fmt.Sprintf("https://v2.sg.media-imdb.com/suggestion/x/%s.json", encoded)
+type TVMazeShow struct {
+	ID int `json:"id"`
+}
 
-	req, _ := http.NewRequest("GET", apiURL, nil)
+type TVMazeSeason struct {
+	ID           int    `json:"id"`
+	Number       int    `json:"number"`
+	EpisodeOrder int    `json:"episodeOrder"`
+	Name         string `json:"name"`
+}
+
+type TVMazeEpisode struct {
+	ID     int    `json:"id"`
+	Number int    `json:"number"`
+	Name   string `json:"name"`
+}
+
+func main() {
+	var query string
+	if len(os.Args) >= 2 {
+		query = os.Args[1]
+	} else {
+		fmt.Print("Search: ")
+		fmt.Scan(&query)
+	}
+
+	if _, err := exec.LookPath("mpv"); err != nil {
+		fmt.Println("mpv is not installed")
+		os.Exit(1)
+	}
+
+	IMDBItems, err := searchIMDB(query)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	selectedIMDBItem, err := fuzzySelect(IMDBItems, func(item IMDBItem) string {
+		return fmt.Sprintf("%s (%d)", item.Title, item.Year)
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	season, episode := 0, 0
+	mediaType := extractor.Movie
+	episodeInfo := ""
+
+	if selectedIMDBItem.QID == "tvSeries" {
+		season, episode = handleTV(selectedIMDBItem)
+		mediaType = extractor.TV
+		episodeInfo = fmt.Sprintf("S%02dE%02d", season, episode)
+		if season == 0 && episode == 0 {
+			fmt.Fprintln(os.Stderr, "failed to select season/episode")
+			os.Exit(1)
+		}
+	}
+
+	opts := extractor.ResolveOptions{
+		IMDBID:  selectedIMDBItem.ID,
+		Type:    mediaType,
+		Season:  season,
+		Episode: episode,
+	}
+
+	variants, err := opts.ResolveStreamVariants()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	selectedVariant, err := fuzzySelect(variants, func(v extractor.StreamVariant) string {
+		return extractor.FormatResolutionQuality(v.Resolution)
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	title := fmt.Sprintf("%s (%d) %s", selectedIMDBItem.Title, selectedIMDBItem.Year, episodeInfo)
+	cmd := exec.Command("mpv",
+		"--title="+title,
+		"--force-media-title="+title,
+		"-demuxer-max-bytes=50MiB",
+		selectedVariant.URL,
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Run()
+}
+
+func searchIMDB(query string) ([]IMDBItem, error) {
+	apiURL := fmt.Sprintf("https://v2.sg.media-imdb.com/suggestion/x/%s.json", url.QueryEscape(query))
+
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
 	req.Header.Set("Accept", "application/json")
 
@@ -42,32 +131,83 @@ func SearchIMDB(query string) ([]IMDBItem, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
 	var imdbResp IMDBResponse
-	if err := json.Unmarshal(body, &imdbResp); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&imdbResp); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
-	i := 0
+	filtered := imdbResp.D[:0]
 	for _, item := range imdbResp.D {
-		if item.QID == "movie" {
-			imdbResp.D[i] = item
-			i++
+		switch item.QID {
+		case "movie":
+			item.Title += " (movie)"
+			filtered = append(filtered, item)
+		case "tvSeries":
+			item.Title += " (TV)"
+			filtered = append(filtered, item)
 		}
 	}
-	return imdbResp.D[:i], nil
+	return filtered, nil
 }
 
-func FuzzySelect[T any](items []T, display func(T) string) (T, error) {
+func handleTV(imdb IMDBItem) (int, int) {
+	var show TVMazeShow
+	if err := fetchJSON(fmt.Sprintf("https://api.tvmaze.com/lookup/shows?imdb=%s", imdb.ID), &show); err != nil {
+		log.Printf("failed to fetch show: %v", err)
+		return 0, 0
+	}
+
+	var seasons []TVMazeSeason
+	if err := fetchJSON(fmt.Sprintf("https://api.tvmaze.com/shows/%d/seasons", show.ID), &seasons); err != nil {
+		log.Printf("failed to fetch seasons: %v", err)
+		return 0, 0
+	}
+
+	season, err := fuzzySelect(seasons, func(s TVMazeSeason) string {
+		return fmt.Sprintf("Season %d (%d episodes)", s.Number, s.EpisodeOrder)
+	})
+	if err != nil {
+		log.Printf("season selection failed: %v", err)
+		return 0, 0
+	}
+
+	var episodes []TVMazeEpisode
+	if err := fetchJSON(fmt.Sprintf("https://api.tvmaze.com/seasons/%d/episodes", season.ID), &episodes); err != nil {
+		log.Printf("failed to fetch episodes: %v", err)
+		return 0, 0
+	}
+
+	episode, err := fuzzySelect(episodes, func(e TVMazeEpisode) string {
+		return fmt.Sprintf("E%02d – %s", e.Number, e.Name)
+	})
+	if err != nil {
+		log.Printf("episode selection failed: %v", err)
+		return 0, 0
+	}
+
+	return season.Number, episode.Number
+}
+
+func fetchJSON(url string, target any) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+func fuzzySelect[T any](items []T, display func(T) string) (T, error) {
 	var zero T
 
-	displays := make([] string, len(items))
+	displays := make([]string, len(items))
 	index := make(map[string]T, len(items))
-	for i, item := range items{
+	for i, item := range items {
 		d := display(item)
 		displays[i] = d
 		index[d] = item
@@ -94,80 +234,7 @@ func FuzzySelect[T any](items []T, display func(T) string) (T, error) {
 		os.Exit(0)
 	}
 	if err != nil {
-		return zero, fmt.Errorf("fzf exited with code %d:  %w", code, err)
+		return zero, fmt.Errorf("fzf exited with code %d: %w", code, err)
 	}
 	return index[<-outputChan], nil
-}
-
-func OpenInMPV(url string, item IMDBItem) {
-	title := fmt.Sprintf("%s (%d)", item.Title, item.Year)
-	titleFlag := "--title=" + title
-	forceTitle := "--force-media-title=" + title
-	cache := fmt.Sprintf("-demuxer-max-bytes=50MiB")
-	cmd := exec.Command("mpv", titleFlag, forceTitle, cache, url)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Run()
-}
-
-/*
- * -c: continue a TV
-*/
-func main() {
-	var query string
-
-	if len(os.Args) >= 2 {
-		query = os.Args[1];
-	} else {
-		fmt.Print("Film: ")
-		fmt.Scan(&query)
-	}
-
-	deps := []string{"mpv"}
-	for _, dep := range deps {
-		_, err := exec.LookPath(dep)
-		if err != nil {
-			fmt.Printf("%s is not installed\n", dep)
-			os.Exit(1)
-		}
-	}
-	fmt.Println("All dependencies are installed")
-
-	// fetch the results from imdb
-	movies, err := SearchIMDB(query)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// user selects a title
-	selectedIMDB, err := FuzzySelect(movies, func(item IMDBItem) string {
-		return fmt.Sprintf("%s (%d)", item.Title, item.Year)
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	fmt.Println("selected imdb", selectedIMDB.ID)
-
-	// resolve stream variants
-	opts := extractor.ResolveOptions{
-		IMDBID: selectedIMDB.ID,
-		Type:   extractor.Movie,
-	}
-	variants, err := opts.ResolveStreamVariants()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// user selects quality
-	selected, err := FuzzySelect(variants, func(v extractor.StreamVariant) string {
-		return extractor.FormatResolutionQuality(v.Resolution)
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	OpenInMPV(selected.URL, selectedIMDB)
 }
