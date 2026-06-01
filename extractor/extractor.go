@@ -66,6 +66,8 @@ const (
 // ResolveOptions contains the input parameters for resolving an HLS stream.
 type ResolveOptions struct {
 	IMDBID  string
+	Title   string
+	Year    int
 	Type    MediaType
 	Season  int
 	Episode int
