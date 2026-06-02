@@ -18,7 +18,15 @@ import (
 	fzf "github.com/junegunn/fzf/src"
 )
 
-var histFile string
+// TODO shouldn't we also combine the formatting of media titles into one function
+
+var (
+	histFile string
+	deps = []string{"mpv"}
+	continueFlag = flag.Bool("c", false, "continue watching TV shows")
+	downloadFlag = flag.Bool("d", false, "download film/TV episode")
+	streamingOpts extractor.ResolveOptions
+)
 
 type IMDBResponse struct {
 	D []IMDBItem `json:"d"`
@@ -55,13 +63,10 @@ func main() {
 	}
 }
 
-// run wires up the CLI: it verifies dependencies, parses flags, resolves a
-// stream (by searching IMDB or resuming from watch history), lets the user pick
-// a quality variant, and plays it in mpv.
-//
 // TODO: implement the -d (download) flag; it currently returns an error.
+
 func run() error {
-	deps := []string{"mpv"}
+	var err error
 
 	for _, dep := range deps {
 		if _, err := exec.LookPath(dep); err != nil {
@@ -69,61 +74,86 @@ func run() error {
 		}
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("error reading home directory: %w", err)
+	if err = initHistFile(); err != nil {
+		return fmt.Errorf("error initiating history file %w", err)
 	}
-	histFile = filepath.Join(homeDir, ".local", "state", "kino-hsts.txt")
-	continueFlag := flag.Bool("c", false, "continue watching TV shows")
-	downloadFlag := flag.Bool("d", false, "download film/TV episode")
+
 	flag.Parse()
-
 	if *downloadFlag {
-		return fmt.Errorf("download is not supported yet")
+		if err = handleDownloadFlag(); err != nil {
+			return fmt.Errorf("Download flag error: %w", err)
+		}
 	}
 
-	var opts extractor.ResolveOptions
 	if *continueFlag {
-		progresses := LoadAllProgress()
-		opts, err = fuzzySelect(progresses, func(progress extractor.ResolveOptions) string {
-			return fmt.Sprintf("%s - S%02dE%02d", progress.Title, progress.Season, progress.Episode)
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+		if err = handleContinueFlag(); err != nil {
+			return fmt.Errorf("Continue flag error: %w", err)
 		}
 	} else {
-		opts = userInputOPT()
+		if err = promptResolveOptions(); err != nil {
+			return fmt.Errorf("prompting error: %w", err)
+		}
 	}
 
-	variants, err := opts.ResolveStreamVariants()
+	variants, err := streamingOpts.ResolveStreamVariants()
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("resolving streams error: %w", err)
 	}
 
 	selectedVariant, err := fuzzySelect(variants, func(v extractor.StreamVariant) string {
 		return extractor.FormatResolutionQuality(v.Resolution)
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return fmt.Errorf("resolving variants error: %w", err)
 	}
-	OpenInMPV(selectedVariant.URL, opts)
+
+	OpenInMPV(selectedVariant.URL)
 	return nil
 }
 
-func OpenInMPV(URL string, opts extractor.ResolveOptions) {
+func initHistFile() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return  err
+	}
+	histFile =  filepath.Join(homeDir, ".local", "state", "kino-hsts.txt")
+	return nil
+}
+
+func handleDownloadFlag() error {
+	return fmt.Errorf("download is not supported yet")
+}
+
+func handleContinueFlag() error {
+	var err error
+
+	history, err := loadHistory()
+	if err != nil {
+		return err
+	}
+
+	streamingOpts, err = fuzzySelect(history, func(p extractor.ResolveOptions) string {
+		return fmt.Sprintf("%s - S%02dE%02d", p.Title, p.Season, p.Episode)
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func OpenInMPV(URL string) {
 	fmt.Println("Requesting URL:", URL)
 
-	title := fmt.Sprintf("%s (%d)", opts.Title, opts.Year)
-	if opts.Type == extractor.TV {
-		title = fmt.Sprintf("%s (%d) S%02dE%02d", opts.Title, opts.Year, opts.Season, opts.Episode)
+	title := fmt.Sprintf("%s (%d)", streamingOpts.Title, streamingOpts.Year)
+	if streamingOpts.Type == extractor.TV {
+		title = fmt.Sprintf("%s (%d) S%02dE%02d", streamingOpts.Title, streamingOpts.Year, streamingOpts.Season, streamingOpts.Episode)
 	}
 
 	cmd := exec.Command("mpv",
 		"--title="+title,
 		"--force-media-title="+title,
-		"-demuxer-max-bytes=50MiB",
+		"--demuxer-max-bytes=50MiB",
 		"--http-header-fields=Referer: https://cloudnestra.com/",
 		"--http-header-fields=Origin: https://cloudnestra.com",
 		URL,
@@ -133,7 +163,7 @@ func OpenInMPV(URL string, opts extractor.ResolveOptions) {
 	cmd.Run()
 }
 
-func userInputOPT() extractor.ResolveOptions {
+func promptResolveOptions() error {
 	var query string
 	if flag.NArg() >= 1 {
 		query = flag.Arg(0)
@@ -145,15 +175,15 @@ func userInputOPT() extractor.ResolveOptions {
 
 	IMDBItems, err := searchIMDB(query)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("searching IMDB: %w", err)
 	}
 
 	selectedIMDBItem, err := fuzzySelect(IMDBItems, func(item IMDBItem) string {
-		return fmt.Sprintf("%s (%d)", item.Title, item.Year)
+		suffix := map[string]string{"movie": " (movie)", "tvSeries": " (TV)"}[item.QID]
+		return fmt.Sprintf("%s%s (%d)", item.Title, suffix, item.Year)
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
 
 	season, episode := 0, 0
@@ -164,22 +194,12 @@ func userInputOPT() extractor.ResolveOptions {
 		mediaType = extractor.TV
 
 		if season == 0 && episode == 0 {
-			fmt.Fprintln(os.Stderr, "failed to select season/episode")
-			os.Exit(1)
+			return fmt.Errorf("failed to selected an episode")
 		}
 
-		progress := extractor.ResolveOptions{
-			IMDBID:  selectedIMDBItem.ID,
-			Title:   selectedIMDBItem.Title,
-			Year:    selectedIMDBItem.Year,
-			Type:    extractor.TV,
-			Season:  season,
-			Episode: episode,
-		}
-		SaveProgress(progress)
 	}
 
-	opts := extractor.ResolveOptions{
+	streamingOpts = extractor.ResolveOptions{
 		IMDBID:  selectedIMDBItem.ID,
 		Title:   selectedIMDBItem.Title,
 		Year:    selectedIMDBItem.Year,
@@ -188,7 +208,10 @@ func userInputOPT() extractor.ResolveOptions {
 		Episode: episode,
 	}
 
-	return opts
+	if selectedIMDBItem.QID == "tvSeries" {
+		SaveProgress(streamingOpts)
+	}
+	return nil
 }
 
 func searchIMDB(query string) ([]IMDBItem, error) {
@@ -215,11 +238,7 @@ func searchIMDB(query string) ([]IMDBItem, error) {
 	filtered := imdbResp.D[:0]
 	for _, item := range imdbResp.D {
 		switch item.QID {
-		case "movie":
-			item.Title += " (movie)"
-			filtered = append(filtered, item)
-		case "tvSeries":
-			item.Title += " (TV)"
+		case "movie", "tvSeries":
 			filtered = append(filtered, item)
 		}
 	}
@@ -315,8 +334,6 @@ func fuzzySelect[T any](items []T, display func(T) string) (T, error) {
 	return index[<-outputChan], nil
 }
 
-// SaveProgress records the user's current position for a TV show in histFile,
-// replacing any existing entry for the same IMDB ID.
 //
 // TODO: store the *next* episode to resume from rather than the one just watched:
 //   - advance to the next episode in the same season when one exists
@@ -353,46 +370,57 @@ func SaveProgress(progress extractor.ResolveOptions) {
 	file.WriteString(strings.Join(lines, "\n") + "\n")
 }
 
-func LoadAllProgress() []extractor.ResolveOptions {
-	data, err := os.ReadFile(histFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		log.Fatal(err)
+func parseHistoryLine(lineNum int, line string) (extractor.ResolveOptions, error) {
+	parts := strings.Split(line, "|")
+	if len(parts) != 6 {
+		return extractor.ResolveOptions{}, fmt.Errorf("line %d: expected 6 fields, got %d", lineNum, len(parts))
 	}
 
-	var progresses []extractor.ResolveOptions
+	year, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return extractor.ResolveOptions{}, fmt.Errorf("line %d: year %q: %w", lineNum, parts[2], err)
+	}
+
+	season, err := strconv.Atoi(parts[4])
+	if err != nil {
+		return extractor.ResolveOptions{}, fmt.Errorf("line %d: season %q: %w", lineNum, parts[4], err)
+	}
+
+	episode, err := strconv.Atoi(parts[5])
+	if err != nil {
+		return extractor.ResolveOptions{}, fmt.Errorf("line %d: episode %q: %w", lineNum, parts[5], err)
+	}
+
+	return extractor.ResolveOptions{
+		IMDBID:  parts[0],
+		Title:   parts[1],
+		Year:    year,
+		Type:    extractor.MediaType(parts[3]),
+		Season:  season,
+		Episode: episode,
+	}, nil
+}
+
+func loadHistory() ([]extractor.ResolveOptions, error) {
+	var history []extractor.ResolveOptions
+ 	var err error
+
+	data, err := os.ReadFile(histFile)
+	if err != nil {
+		return nil, err
+	}
+
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	for _, line := range lines {
+	for i, line := range lines {
 		if line == "" {
 			continue
 		}
-		parts := strings.Split(line, "|")
-		if len(parts) != 6 {
-			continue
-		}
-		year, err := strconv.Atoi(parts[2])
-		if err != nil {
-			continue
-		}
-		season, err := strconv.Atoi(parts[4])
-		if err != nil {
-			continue
-		}
-		episode, err := strconv.Atoi(parts[5])
-		if err != nil {
-			continue
-		}
-		progresses = append(progresses, extractor.ResolveOptions{
-			IMDBID:  parts[0],
-			Title:    parts[1],
-			Year:    year,
-			Type:    extractor.MediaType(parts[3]),
-			Season:  season,
-			Episode: episode,
-		})
-	}
 
-	return progresses
+		p, err := parseHistoryLine(i+1, line)
+		if err != nil {
+			return nil, err
+		}
+		history = append(history, p)
+	}
+	return history, nil
 }

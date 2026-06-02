@@ -26,4 +26,4 @@ IMDBID, name, season, episode
 - [ ] add download support
 - [ ] allanime support
 - [ ] subtitle support
-- [ ] fix computers getting flagg
+- [ ] fix computers getting flagged
