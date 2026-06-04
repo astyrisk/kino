@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	vidsrcBaseURL          = "https://vidsrc-embed.ru"
+	// vidsrcBaseURL          = "https://vidsrc-embed.ru"
+	vidsrcBaseURL          = "https://vidsrcme.su/"
 	cloudnestraBaseURL     = "https://cloudnestra.com"
 	defaultHTTPTimeout     = 10 * time.Second
 	contentDirectory       = "content"
